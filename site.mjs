@@ -11,6 +11,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { validateCanonicalDevelopmentV2 } from "./evidence-bundle.mjs";
+import { parseStrictJsonBytes } from "./strict-json.mjs";
 import {
   exactKeys,
   httpsUrl,
@@ -119,7 +120,7 @@ async function loadDevelopments({ contentDir }) {
     const recordPath = join(contentDir, entry.name, "development.json");
     let source;
     try {
-      source = await readFile(recordPath, "utf8");
+      source = await readFile(recordPath);
     } catch (error) {
       if (error.code === "ENOENT") {
         throw new Error("A development record file is missing");
@@ -128,7 +129,7 @@ async function loadDevelopments({ contentDir }) {
     }
     let input;
     try {
-      input = JSON.parse(source);
+      input = parseStrictJsonBytes(source);
     } catch {
       throw new Error("A development record is not valid JSON");
     }
@@ -439,7 +440,10 @@ function renderDevelopment(record, siteUrl) {
   });
 }
 
-function renderMethodology(siteUrl) {
+function renderMethodology(siteUrl, containsLive) {
+  const coverageStatement = containsLive
+    ? "This stage publishes validated metadata from explicitly identified live source records. Synthetic conformance records remain labelled and are not presented as current coverage."
+    : "This demonstration publishes only validated metadata from one clearly labelled, non-production source fixture.";
   return layout({
     title: "Methodology",
     siteUrl,
@@ -447,7 +451,7 @@ function renderMethodology(siteUrl) {
       <article class="prose">
         <p class="eyebrow">Methodology</p>
         <h1>Evidence before publication</h1>
-        <p>This demonstration publishes only validated metadata from one clearly labelled, non-production source fixture.</p>
+        <p>${coverageStatement}</p>
         <h2>Sources and abstention</h2>
         <p>The intended service relies on authoritative primary sources. If identity, status, freshness, integrity or reuse rights cannot be established, an item is held rather than filled with plausible prose.</p>
         <h2>Artificial intelligence</h2>
@@ -534,9 +538,10 @@ export function renderSite(records, { siteUrl, cssText }) {
     if (leftKey === rightKey) return 0;
     return leftKey < rightKey ? 1 : -1;
   });
+  const containsLive = ordered.some(record => record.mode === "live");
   const files = new Map([
     ["index.html", renderHome(ordered, baseUrl)],
-    ["methodology/index.html", renderMethodology(baseUrl)],
+    ["methodology/index.html", renderMethodology(baseUrl, containsLive)],
     ["feed.xml", renderFeedXml(ordered, baseUrl)],
     ["feed.json", renderFeedJson(ordered, baseUrl)],
     ["assets/site.css", cssText],

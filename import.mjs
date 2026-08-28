@@ -127,6 +127,12 @@ async function existingTargetStatus({
       "import target must be an ordinary directory or absent",
     );
   }
+  const developmentDetails = await inspectOptional(operations, developmentPath);
+  if (developmentDetails === null || !ordinaryFile(developmentDetails)) {
+    throw new EvidenceImportError(
+      "existing development conflicts with the evidence bundle",
+    );
+  }
   let existingBytes;
   try {
     existingBytes = await operations.readFile(developmentPath);
