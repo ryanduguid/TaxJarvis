@@ -90,3 +90,27 @@ test("validation reports multiple inexpensive errors without echoing values", ()
   assert.ok(result.errors.length >= 3);
   assert.doesNotMatch(JSON.stringify(result.errors), new RegExp(marker));
 });
+
+test("validation rejects sparse topics", () => {
+  const result = validateDevelopment(changed(value => {
+    value.topics = new Array(1);
+  }));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some(error => error.path === "topics[0]"));
+});
+
+test("validation rejects sparse affected practice areas", () => {
+  const result = validateDevelopment(changed(value => {
+    value.affected_practice_areas = new Array(1);
+  }));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some(error => error.path === "affected_practice_areas[0]"));
+});
+
+test("validation rejects sparse sources", () => {
+  const result = validateDevelopment(changed(value => {
+    value.sources = new Array(1);
+  }));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some(error => error.path === "sources[0]"));
+});

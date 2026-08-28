@@ -45,7 +45,10 @@ function httpsUrl(errors, value, path, { nullable = false, allowInvalidHost = fa
 function labelList(errors, value, path) {
   if (!Array.isArray(value) || value.length > 20) { addError(errors, path, "must be an array of at most 20 labels"); return; }
   const seen = new Set();
-  value.forEach((label, index) => { if (text(errors, label, `${path}[${index}]`, 80)) { if (seen.has(label)) addError(errors, path, "must contain unique labels"); seen.add(label); } });
+  for (let index = 0; index < value.length; index += 1) {
+    const label = value[index];
+    if (text(errors, label, `${path}[${index}]`, 80)) { if (seen.has(label)) addError(errors, path, "must contain unique labels"); seen.add(label); }
+  }
 }
 
 export function validateDevelopment(input) {
@@ -64,8 +67,9 @@ export function validateDevelopment(input) {
   if (!Array.isArray(input.sources) || input.sources.length < 1 || input.sources.length > 20) addError(errors, "sources", "must contain 1 to 20 sources");
   else {
     const sourceIds = new Set();
-    input.sources.forEach((source, index) => {
-      const base = `sources[${index}]`; if (!exactKeys(errors, source, base, SOURCE_KEYS)) return;
+    for (let index = 0; index < input.sources.length; index += 1) {
+      const source = input.sources[index];
+      const base = `sources[${index}]`; if (!exactKeys(errors, source, base, SOURCE_KEYS)) continue;
       if (!IDENTIFIER.test(source.source_id ?? "")) addError(errors, `${base}.source_id`, "must be a safe identifier");
       else if (sourceIds.has(source.source_id)) addError(errors, `${base}.source_id`, "must be unique");
       sourceIds.add(source.source_id);
@@ -81,7 +85,7 @@ export function validateDevelopment(input) {
         httpsUrl(errors, source.rights.licence_url, `${base}.rights.licence_url`, { nullable: true, allowInvalidHost: true });
       }
       if (!Array.isArray(source.evidence) || source.evidence.length !== 0) addError(errors, `${base}.evidence`, "must be an empty array");
-    });
+    }
   }
   if (input.explainer !== null) addError(errors, "explainer", "must be null");
   if (exactKeys(errors, input.revision, "revision", REVISION_KEYS)) {
