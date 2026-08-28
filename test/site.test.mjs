@@ -212,3 +212,63 @@ test("rendering escapes a hostile record instead of creating markup", () => {
   assert.match(files.get("feed.xml"), /Tom &amp; &apos;Ada&apos;/);
   assert.equal(JSON.parse(files.get("feed.json")).items[0].title, hostile.title);
 });
+
+test("rendering rejects site URLs with bare query and fragment delimiters", () => {
+  for (const siteUrl of [
+    "https://publisher.example/?",
+    "https://publisher.example/#",
+  ]) {
+    assert.throws(() => renderSite([fixture], { siteUrl, cssText: "" }));
+  }
+  const files = renderSite([fixture], {
+    siteUrl: "https://publisher.example/path%3Fname",
+    cssText: "",
+  });
+  assert.match(files.get("index.html"), /https:\/\/publisher\.example\/path%3Fname\//);
+});
+
+test("validation recognises a trailing-dot invalid source hostname", () => {
+  const result = validateDevelopment(changed(value => {
+    value.fixture = false;
+    value.sources[0].canonical_url = "https://example.invalid./source";
+  }));
+
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some(error => error.path === "sources[0].canonical_url"));
+});
+
+test("rendering abstains from trailing-dot invalid fixture source and licence links", () => {
+  const trailingDotSource = changed(value => {
+    value.sources[0].canonical_url = "https://example.invalid./source";
+    value.sources[0].rights.licence_url = "https://example.invalid./licence";
+  });
+  const files = renderSite([trailingDotSource], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  });
+  const development = files.get("developments/dev-demo-001/index.html");
+
+  assert.doesNotMatch(development, /<a[^>]+example\.invalid\./i);
+  assert.match(development, /https:\/\/example\.invalid\.\/source/);
+  assert.match(development, /https:\/\/example\.invalid\.\/licence/);
+});
+
+test("rendering records each RSS item revision in Atom updated", () => {
+  const newer = changed(value => {
+    value.development_id = "dev-demo-002";
+    value.published_at = "2026-08-28T00:00:00Z";
+    value.revision.updated_at = "2026-08-29T00:00:00Z";
+  });
+  const rss = renderSite([fixture, newer], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  }).get("feed.xml");
+
+  assert.match(rss, /<rss version="2\.0" xmlns:atom="http:\/\/www\.w3\.org\/2005\/Atom">/);
+  for (const record of [fixture, newer]) {
+    const item = rss.match(new RegExp(
+      `<item>[\\s\\S]*?<guid isPermaLink="false">${record.development_id}<\\/guid>[\\s\\S]*?<\\/item>`,
+    ))[0];
+    assert.match(item, new RegExp(`<atom:updated>${record.revision.updated_at}<\\/atom:updated>`));
+  }
+});

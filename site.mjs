@@ -33,12 +33,15 @@ function utcTimestamp(errors, value, path, { nullable = false } = {}) {
   if (parts.some((part, index) => part !== actual[index])) { addError(errors, path, "must identify a real UTC date and time"); return null; }
   return milliseconds;
 }
+function invalidHostname(hostname) {
+  return hostname.replace(/\.$/, "").endsWith(".invalid");
+}
 function httpsUrl(errors, value, path, { nullable = false, allowInvalidHost = false } = {}) {
   if (nullable && value === null) return null;
   if (typeof value !== "string" || value.length > 2048) { addError(errors, path, "must be an HTTPS URL of at most 2048 characters"); return null; }
   try {
     const parsed = new URL(value);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password || (!allowInvalidHost && parsed.hostname.endsWith(".invalid"))) throw new TypeError("unsafe URL");
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || (!allowInvalidHost && invalidHostname(parsed.hostname))) throw new TypeError("unsafe URL");
     return parsed;
   } catch { addError(errors, path, "must be a permitted HTTPS URL"); return null; }
 }
@@ -125,14 +128,15 @@ function escapeXml(value) {
 }
 
 function normaliseSiteUrl(value) {
-  const url = new URL(value);
+  const rawValue = String(value);
+  const url = new URL(rawValue);
   const loopback =
     url.protocol === "http:" &&
     new Set(["127.0.0.1", "localhost", "[::1]"]).has(url.hostname);
   if (url.protocol !== "https:" && !loopback) {
     throw new TypeError("SITE_URL must use HTTPS or a loopback HTTP origin");
   }
-  if (url.username || url.password || url.search || url.hash) {
+  if (url.username || url.password || rawValue.includes("?") || rawValue.includes("#")) {
     throw new TypeError("SITE_URL must not contain credentials, query or fragment");
   }
   if (!url.pathname.endsWith("/")) url.pathname += "/";
@@ -217,7 +221,7 @@ function renderHome(records, siteUrl) {
 function renderSource(source, fixture) {
   const parsed = new URL(source.canonical_url);
   const sourceLocation =
-    fixture && parsed.hostname.endsWith(".invalid")
+    fixture && invalidHostname(parsed.hostname)
       ? `<code>${escapeHtml(source.canonical_url)}</code>`
       : `<a href="${escapeHtml(parsed.href)}" rel="external noopener">Open official source</a>`;
   const licenceUrl = source.rights.licence_url === null
@@ -225,7 +229,7 @@ function renderSource(source, fixture) {
     : new URL(source.rights.licence_url);
   const licenceLocation = licenceUrl === null
     ? "No separate licence URL supplied."
-    : fixture && licenceUrl.hostname.endsWith(".invalid")
+    : fixture && invalidHostname(licenceUrl.hostname)
       ? `<code>${escapeHtml(licenceUrl.href)}</code>`
       : `<a href="${escapeHtml(licenceUrl.href)}" rel="external noopener">Source licence</a>`;
   return `
@@ -338,12 +342,13 @@ function renderFeedXml(records, siteUrl) {
       <title>${escapeXml(record.title)}</title>
       <link>${escapeXml(url)}</link>
       <pubDate>${escapeXml(new Date(record.published_at).toUTCString())}</pubDate>
+      <atom:updated>${escapeXml(record.revision.updated_at)}</atom:updated>
       <description>${escapeXml(description)}</description>
     </item>`;
   }).join("");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>${SITE_NAME}</title>
     <link>${escapeXml(siteUrl)}</link>
