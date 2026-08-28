@@ -14,6 +14,7 @@ import {
 } from "node:fs/promises";
 import { once } from "node:events";
 import { request } from "node:http";
+import { createConnection, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -323,6 +324,28 @@ function httpRequest({ hostname, port, path, method = "GET" }) {
   });
 }
 
+function rawSocketRequest({ hostname, port, requestText }) {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection({ host: hostname, port });
+    const chunks = [];
+    socket.once("connect", () => socket.end(requestText));
+    socket.on("data", chunk => chunks.push(chunk));
+    socket.once("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    socket.once("error", reject);
+  });
+}
+
+async function unusedLoopbackPort() {
+  const reservation = createNetServer();
+  await new Promise((resolveListening, reject) => {
+    reservation.once("error", reject);
+    reservation.listen(0, "127.0.0.1", resolveListening);
+  });
+  const { port } = reservation.address();
+  await new Promise(resolveClosing => reservation.close(resolveClosing));
+  return port;
+}
+
 test("smoke: serves only public routes and denies unsafe request targets", async t => {
   const workspace = await temporaryPublisher(t);
   await buildSite({
@@ -406,6 +429,66 @@ test("smoke: serves only public routes and denies unsafe request targets", async
     assert.match(response.headers["content-type"], /text\/plain/);
     assert.equal(response.headers["x-content-type-options"], "nosniff");
   }
+});
+
+test("smoke: CONNECT receives the fixed method-not-allowed response", async t => {
+  const workspace = await temporaryPublisher(t);
+  await buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "http://127.0.0.1:4173/",
+  });
+  const server = await startServer({
+    rootDir: workspace.outputDir,
+    hostname: "127.0.0.1",
+    port: 0,
+  });
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const { port } = server.address();
+
+  const response = await rawSocketRequest({
+    hostname: "127.0.0.1",
+    port,
+    requestText: "CONNECT example.invalid:443 HTTP/1.1\r\nHost: example.invalid:443\r\n\r\n",
+  });
+
+  assert.match(response, /^HTTP\/1\.1 405 Method Not Allowed\r\n/);
+  assert.match(response, /\r\nAllow: GET, HEAD\r\n/i);
+  assert.match(response, /\r\nContent-Type: text\/plain; charset=utf-8\r\n/i);
+  assert.match(response, /\r\nX-Content-Type-Options: nosniff\r\n/i);
+  assert.match(response, /\r\n\r\nMethod not allowed\n$/);
+});
+
+test("smoke: a missing preview root rejects before listening", { concurrency: false }, async t => {
+  const workspace = await temporaryPublisher(t);
+  const port = await unusedLoopbackPort();
+  const unhandledRejections = [];
+  const recordUnhandledRejection = reason => unhandledRejections.push(reason);
+  process.on("unhandledRejection", recordUnhandledRejection);
+  t.after(() => process.off("unhandledRejection", recordUnhandledRejection));
+
+  const outcome = await startServer({
+    rootDir: join(workspace.rootDir, "missing-out"),
+    hostname: "127.0.0.1",
+    port,
+  }).then(
+    server => ({ server }),
+    error => ({ error }),
+  );
+  if (outcome.server !== undefined) {
+    t.after(() => new Promise(resolve => outcome.server.close(resolve)));
+  }
+
+  assert.equal(outcome.server, undefined);
+  assert.equal(outcome.error?.code, "ENOENT");
+  await assert.rejects(
+    rawSocketRequest({
+      hostname: "127.0.0.1",
+      port,
+      requestText: "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+    }),
+    { code: "ECONNREFUSED" },
+  );
+  assert.deepEqual(unhandledRejections, []);
 });
 
 async function readArtifact(outputDir, paths) {
