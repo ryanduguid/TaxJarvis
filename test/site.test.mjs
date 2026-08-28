@@ -56,11 +56,76 @@ function changed(mutator) {
   return candidate;
 }
 
+function assertWellFormedGeneratedXml(xml) {
+  const illegalCharacters = [];
+  let offset = 0;
+  for (const character of xml) {
+    const codePoint = character.codePointAt(0);
+    const allowed =
+      codePoint === 0x09 ||
+      codePoint === 0x0a ||
+      codePoint === 0x0d ||
+      (codePoint >= 0x20 && codePoint <= 0xd7ff) ||
+      (codePoint >= 0xe000 && codePoint <= 0xfffd) ||
+      (codePoint >= 0x10000 && codePoint <= 0x10ffff);
+    if (!allowed) illegalCharacters.push({ offset, codePoint });
+    offset += character.length;
+  }
+  assert.deepEqual(illegalCharacters, []);
+  assert.equal(Buffer.from(xml, "utf8").toString("utf8"), xml);
+
+  const declaration = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  assert.equal(xml.startsWith(declaration), true);
+  const body = xml.slice(declaration.length);
+  const stack = [];
+  let cursor = 0;
+  let rootCount = 0;
+  let rootClosed = false;
+
+  for (const match of body.matchAll(/<[^>]*>|[^<]+/g)) {
+    assert.equal(match.index, cursor);
+    const token = match[0];
+    cursor += token.length;
+    if (token.startsWith("</")) {
+      const closing = /^<\/([A-Za-z_][A-Za-z0-9_.:-]*)\s*>$/.exec(token);
+      assert.ok(closing, `invalid closing tag: ${token}`);
+      assert.equal(closing[1], stack.pop());
+      if (stack.length === 0) rootClosed = true;
+    } else if (token.startsWith("<")) {
+      const opening = /^<([A-Za-z_][A-Za-z0-9_.:-]*)(?:\s+[A-Za-z_][A-Za-z0-9_.:-]*="[^"<]*")*\s*(\/?)>$/.exec(token);
+      assert.ok(opening, `invalid opening tag: ${token}`);
+      if (stack.length === 0) {
+        assert.equal(rootClosed, false);
+        rootCount += 1;
+      }
+      if (opening[2] === "/") {
+        if (stack.length === 0) rootClosed = true;
+      } else {
+        stack.push(opening[1]);
+      }
+    } else {
+      assert.doesNotMatch(token, /\]\]>/);
+      assert.doesNotMatch(
+        token.replace(/&(?:amp|apos|gt|lt|quot);/g, ""),
+        /&/,
+      );
+      if (stack.length === 0) assert.equal(token.trim(), "");
+    }
+  }
+
+  assert.equal(cursor, body.length);
+  assert.equal(rootCount, 1);
+  assert.deepEqual(stack, []);
+  assert.equal(rootClosed, true);
+}
+
 const invalidCases = [
   ["unknown top-level key", value => { value.extra = true; }, "extra"],
   ["unknown nested key", value => { value.sources[0].extra = true; }, "sources[0].extra"],
   ["schema version", value => { value.schema_version = "development.v2"; }, "schema_version"],
   ["identifier", value => { value.development_id = "../escape"; }, "development_id"],
+  ["numeric development identifier", value => { value.development_id = 123; }, "development_id"],
+  ["boolean development identifier", value => { value.development_id = true; }, "development_id"],
   ["blank title", value => { value.title = " "; }, "title"],
   ["oversized title", value => { value.title = "x".repeat(201); }, "title"],
   ["authority status", value => { value.authority_status = "law"; }, "authority_status"],
@@ -75,6 +140,8 @@ const invalidCases = [
   ["oversized source list", value => { value.sources = Array.from({ length: 21 }, (_, index) => ({ ...structuredClone(value.sources[0]), source_id: `source-demo-${String(index).padStart(3, "0")}` })); }, "sources"],
   ["duplicate source identifier", value => { value.sources.push(structuredClone(value.sources[0])); }, "sources[1].source_id"],
   ["source identifier", value => { value.sources[0].source_id = ".."; }, "sources[0].source_id"],
+  ["numeric source identifier", value => { value.sources[0].source_id = 123; }, "sources[0].source_id"],
+  ["boolean source identifier", value => { value.sources[0].source_id = true; }, "sources[0].source_id"],
   ["source publisher", value => { value.sources[0].publisher = ""; }, "sources[0].publisher"],
   ["document class", value => { value.sources[0].document_class = "article"; }, "sources[0].document_class"],
   ["insecure source URL", value => { value.sources[0].canonical_url = "http://example.com/source"; }, "sources[0].canonical_url"],
@@ -113,6 +180,19 @@ test("validation reports multiple inexpensive errors without echoing values", ()
   assert.doesNotMatch(JSON.stringify(result.errors), new RegExp(marker));
 });
 
+test("validation rejects mixed-type source identifiers without returning partial data", () => {
+  const result = validateDevelopment(changed(value => {
+    value.sources[0].source_id = 123;
+    const secondSource = structuredClone(value.sources[0]);
+    secondSource.source_id = "123";
+    value.sources.push(secondSource);
+  }));
+
+  assert.equal(result.ok, false);
+  assert.equal(Object.hasOwn(result, "value"), false);
+  assert.ok(result.errors.some(error => error.path === "sources[0].source_id"));
+});
+
 test("validation rejects sparse topics", () => {
   const result = validateDevelopment(changed(value => {
     value.topics = new Array(1);
@@ -136,6 +216,64 @@ test("validation rejects sparse sources", () => {
   assert.equal(result.ok, false);
   assert.ok(result.errors.some(error => error.path === "sources[0]"));
 });
+
+for (const [name, character] of [
+  ["U+0001", "\u0001"],
+  ["a lone high surrogate", "\ud800"],
+  ["a lone low surrogate", "\udc00"],
+]) {
+  test(`validation rejects XML 1.0-forbidden text containing ${name}`, () => {
+    const result = validateDevelopment(changed(value => {
+      value.title = `Unsafe${character}title`;
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(Object.hasOwn(result, "value"), false);
+    assert.ok(result.errors.some(error => error.path === "title"));
+  });
+}
+
+test("rendering retains valid supplementary Unicode in well-formed RSS", () => {
+  const supplementary = changed(value => {
+    value.title = "Supplementary \ud83d\ude00 source";
+  });
+
+  assert.equal(validateDevelopment(supplementary).ok, true);
+  const rss = renderSite([supplementary], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  }).get("feed.xml");
+
+  assert.match(rss, /Supplementary \ud83d\ude00 source/);
+  assertWellFormedGeneratedXml(rss);
+});
+
+for (const [name, mutate, expectedPath] of [
+  [
+    "source retrieval",
+    value => {
+      value.sources[0].published_at = "2026-08-28T00:00:00.000000002Z";
+      value.sources[0].retrieved_at = "2026-08-28T00:00:00.000000001Z";
+    },
+    "sources[0].retrieved_at",
+  ],
+  [
+    "revision update",
+    value => {
+      value.published_at = "2026-08-28T00:00:00.000000002Z";
+      value.revision.updated_at = "2026-08-28T00:00:00.000000001Z";
+    },
+    "revision.updated_at",
+  ],
+]) {
+  test(`validation preserves nanosecond precision for ${name} chronology`, () => {
+    const result = validateDevelopment(changed(mutate));
+
+    assert.equal(result.ok, false);
+    assert.equal(Object.hasOwn(result, "value"), false);
+    assert.ok(result.errors.some(error => error.path === expectedPath));
+  });
+}
 
 test("rendering accepts HTTPS and loopback site URLs only", () => {
   const loopback = renderSite([fixture], {
@@ -246,31 +384,38 @@ test("rendering rejects site URLs with bare query and fragment delimiters", () =
   assert.match(files.get("index.html"), /https:\/\/publisher\.example\/path%3Fname\//);
 });
 
-test("validation recognises a trailing-dot invalid source hostname", () => {
-  const result = validateDevelopment(changed(value => {
-    value.fixture = false;
-    value.sources[0].canonical_url = "https://example.invalid./source";
-  }));
+for (const artificialUrl of [
+  "https://invalid/",
+  "https://invalid./",
+  "https://example.invalid../",
+]) {
+  test(`validation recognises ${artificialUrl} as an artificial source hostname`, () => {
+    const result = validateDevelopment(changed(value => {
+      value.fixture = false;
+      value.sources[0].canonical_url = artificialUrl;
+    }));
 
-  assert.equal(result.ok, false);
-  assert.ok(result.errors.some(error => error.path === "sources[0].canonical_url"));
-});
-
-test("rendering abstains from trailing-dot invalid fixture source and licence links", () => {
-  const trailingDotSource = changed(value => {
-    value.sources[0].canonical_url = "https://example.invalid./source";
-    value.sources[0].rights.licence_url = "https://example.invalid./licence";
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some(error => error.path === "sources[0].canonical_url"));
   });
-  const files = renderSite([trailingDotSource], {
-    siteUrl: "https://publisher.example/",
-    cssText: "",
-  });
-  const development = files.get("developments/dev-demo-001/index.html");
 
-  assert.doesNotMatch(development, /<a[^>]+example\.invalid\./i);
-  assert.match(development, /https:\/\/example\.invalid\.\/source/);
-  assert.match(development, /https:\/\/example\.invalid\.\/licence/);
-});
+  test(`rendering shows ${artificialUrl} source and licence URLs without linking them`, () => {
+    const artificialSource = changed(value => {
+      value.sources[0].canonical_url = artificialUrl;
+      value.sources[0].rights.licence_url = artificialUrl;
+    });
+    const development = renderSite([artificialSource], {
+      siteUrl: "https://publisher.example/",
+      cssText: "",
+    }).get("developments/dev-demo-001/index.html");
+
+    assert.equal(
+      development.split(`<code>${artificialUrl}</code>`).length - 1,
+      2,
+    );
+    assert.equal(development.includes(`href="${artificialUrl}"`), false);
+  });
+}
 
 test("rendering records each RSS item revision in Atom updated", () => {
   const newer = changed(value => {
@@ -290,6 +435,49 @@ test("rendering records each RSS item revision in Atom updated", () => {
     ))[0];
     assert.match(item, new RegExp(`<atom:updated>${record.revision.updated_at}<\\/atom:updated>`));
   }
+});
+
+test("rendering selects the precise latest feed update and retains its source string", () => {
+  const noFraction = changed(value => {
+    value.development_id = "dev-no-fraction";
+    value.revision.updated_at = "2026-08-29T00:00:00Z";
+  });
+  const fractional = changed(value => {
+    value.development_id = "dev-fraction";
+    value.revision.updated_at = "2026-08-29T00:00:00.9Z";
+  });
+
+  const feed = JSON.parse(renderSite([fractional, noFraction], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  }).get("feed.json"));
+
+  assert.equal(feed.updated_at, "2026-08-29T00:00:00.9Z");
+});
+
+test("rendering orders precise publication times and preserves stable equal-instant ties", () => {
+  const equalExplicit = changed(value => {
+    value.development_id = "dev-equal-explicit";
+    value.published_at = "2026-08-28T00:00:00.000000000Z";
+  });
+  const fractional = changed(value => {
+    value.development_id = "dev-fraction";
+    value.published_at = "2026-08-28T00:00:00.9Z";
+  });
+  const noFraction = changed(value => {
+    value.development_id = "dev-no-fraction";
+    value.published_at = "2026-08-28T00:00:00Z";
+  });
+
+  const feed = JSON.parse(renderSite([equalExplicit, fractional, noFraction], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  }).get("feed.json"));
+
+  assert.deepEqual(
+    feed.items.map(item => item.development_id),
+    ["dev-fraction", "dev-equal-explicit", "dev-no-fraction"],
+  );
 });
 
 async function temporaryPublisher(t) {

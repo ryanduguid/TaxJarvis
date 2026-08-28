@@ -22,38 +22,60 @@ const RIGHTS_KEYS = new Set(["mode", "attribution", "licence_url"]);
 const REVISION_KEYS = new Set(["number", "updated_at", "change_note"]);
 
 function isRecord(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
+function isIdentifier(value) { return typeof value === "string" && IDENTIFIER.test(value); }
 function addError(errors, path, message) { errors.push({ path, message }); }
 function exactKeys(errors, value, path, allowed) {
   if (!isRecord(value)) { addError(errors, path, "must be an object"); return false; }
   for (const key of Object.keys(value)) if (!allowed.has(key)) addError(errors, path === "$" ? key : `${path}.${key}`, "is not allowed");
   return true;
 }
+function isXmlText(value) {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== 0x09 &&
+      codePoint !== 0x0a &&
+      codePoint !== 0x0d &&
+      (codePoint < 0x20 || codePoint > 0xd7ff) &&
+      (codePoint < 0xe000 || codePoint > 0xfffd) &&
+      (codePoint < 0x10000 || codePoint > 0x10ffff)
+    ) return false;
+  }
+  return true;
+}
 function text(errors, value, path, maximum) {
-  if (typeof value !== "string" || value.length === 0 || value.trim() !== value || value.length > maximum) {
+  if (typeof value !== "string" || value.length === 0 || value.trim() !== value || value.length > maximum || !isXmlText(value)) {
     addError(errors, path, `must be trimmed text of 1 to ${maximum} characters`); return false;
   }
   return true;
 }
 function oneOf(errors, value, path, allowed) { if (!allowed.has(value)) { addError(errors, path, "has an unsupported value"); return false; } return true; }
+function timestampKey(value) {
+  if (typeof value !== "string") return null;
+  const match = UTC_TIMESTAMP.exec(value);
+  if (match === null) return null;
+  return `${value.slice(0, 19)}.${(match[7] ?? "").padEnd(9, "0")}Z`;
+}
 function utcTimestamp(errors, value, path, { nullable = false } = {}) {
   if (nullable && value === null) return null;
   if (typeof value !== "string") { addError(errors, path, "must be an RFC 3339 UTC timestamp"); return null; }
-  const match = UTC_TIMESTAMP.exec(value); const milliseconds = Date.parse(value);
-  if (!match || !Number.isFinite(milliseconds)) { addError(errors, path, "must be an RFC 3339 UTC timestamp"); return null; }
+  const match = UTC_TIMESTAMP.exec(value); const key = timestampKey(value); const milliseconds = Date.parse(value);
+  if (!match || key === null || !Number.isFinite(milliseconds)) { addError(errors, path, "must be an RFC 3339 UTC timestamp"); return null; }
   const parsed = new Date(milliseconds); const parts = match.slice(1, 7).map(Number);
   const actual = [parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate(), parsed.getUTCHours(), parsed.getUTCMinutes(), parsed.getUTCSeconds()];
   if (parts.some((part, index) => part !== actual[index])) { addError(errors, path, "must identify a real UTC date and time"); return null; }
-  return milliseconds;
+  return key;
 }
-function invalidHostname(hostname) {
-  return hostname.replace(/\.$/, "").endsWith(".invalid");
+function isArtificialHostname(hostname) {
+  const normalised = hostname.toLowerCase().replace(/\.+$/, "");
+  return normalised === "invalid" || normalised.endsWith(".invalid");
 }
 function httpsUrl(errors, value, path, { nullable = false, allowInvalidHost = false } = {}) {
   if (nullable && value === null) return null;
   if (typeof value !== "string" || value.length > 2048) { addError(errors, path, "must be an HTTPS URL of at most 2048 characters"); return null; }
   try {
     const parsed = new URL(value);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password || (!allowInvalidHost && invalidHostname(parsed.hostname))) throw new TypeError("unsafe URL");
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || (!allowInvalidHost && isArtificialHostname(parsed.hostname))) throw new TypeError("unsafe URL");
     return parsed;
   } catch { addError(errors, path, "must be a permitted HTTPS URL"); return null; }
 }
@@ -70,7 +92,7 @@ export function validateDevelopment(input) {
   const errors = [];
   if (!exactKeys(errors, input, "$", DEVELOPMENT_KEYS)) return { ok: false, errors };
   if (input.schema_version !== "development.v1") addError(errors, "schema_version", "must equal development.v1");
-  if (!IDENTIFIER.test(input.development_id ?? "")) addError(errors, "development_id", "must be a safe identifier");
+  if (!isIdentifier(input.development_id)) addError(errors, "development_id", "must be a safe identifier");
   text(errors, input.title, "title", 200);
   oneOf(errors, input.authority_status, "authority_status", AUTHORITY_STATUSES);
   oneOf(errors, input.evidence_status, "evidence_status", EVIDENCE_STATUSES);
@@ -85,7 +107,7 @@ export function validateDevelopment(input) {
     for (let index = 0; index < input.sources.length; index += 1) {
       const source = input.sources[index];
       const base = `sources[${index}]`; if (!exactKeys(errors, source, base, SOURCE_KEYS)) continue;
-      if (!IDENTIFIER.test(source.source_id ?? "")) addError(errors, `${base}.source_id`, "must be a safe identifier");
+      if (!isIdentifier(source.source_id)) addError(errors, `${base}.source_id`, "must be a safe identifier");
       else if (sourceIds.has(source.source_id)) addError(errors, `${base}.source_id`, "must be unique");
       sourceIds.add(source.source_id);
       text(errors, source.publisher, `${base}.publisher`, 200); text(errors, source.title, `${base}.title`, 200);
@@ -374,7 +396,7 @@ function renderHome(records, siteUrl) {
 function renderSource(source, fixture) {
   const parsed = new URL(source.canonical_url);
   const sourceLocation =
-    fixture && invalidHostname(parsed.hostname)
+    fixture && isArtificialHostname(parsed.hostname)
       ? `<code>${escapeHtml(source.canonical_url)}</code>`
       : `<a href="${escapeHtml(parsed.href)}" rel="external noopener">Open official source</a>`;
   const licenceUrl = source.rights.licence_url === null
@@ -382,7 +404,7 @@ function renderSource(source, fixture) {
     : new URL(source.rights.licence_url);
   const licenceLocation = licenceUrl === null
     ? "No separate licence URL supplied."
-    : fixture && invalidHostname(licenceUrl.hostname)
+    : fixture && isArtificialHostname(licenceUrl.hostname)
       ? `<code>${escapeHtml(licenceUrl.href)}</code>`
       : `<a href="${escapeHtml(licenceUrl.href)}" rel="external noopener">Source licence</a>`;
   return `
@@ -457,11 +479,17 @@ function renderMethodology(siteUrl) {
   });
 }
 
+function latestUpdatedAt(records) {
+  let latest = records[0].revision.updated_at;
+  for (let index = 1; index < records.length; index += 1) {
+    const candidate = records[index].revision.updated_at;
+    if (timestampKey(candidate) >= timestampKey(latest)) latest = candidate;
+  }
+  return latest;
+}
+
 function renderFeedJson(records, siteUrl) {
-  const updatedAt = records
-    .map(record => record.revision.updated_at)
-    .sort()
-    .at(-1);
+  const updatedAt = latestUpdatedAt(records);
   return `${JSON.stringify({
     schema_version: "feed.v1",
     updated_at: updatedAt,
@@ -478,10 +506,7 @@ function renderFeedJson(records, siteUrl) {
 }
 
 function renderFeedXml(records, siteUrl) {
-  const updatedAt = records
-    .map(record => record.revision.updated_at)
-    .sort()
-    .at(-1);
+  const updatedAt = latestUpdatedAt(records);
   const items = records.map(record => {
     const url = developmentUrl(siteUrl, record);
     const description = [
@@ -517,9 +542,12 @@ export function renderSite(records, { siteUrl, cssText }) {
     throw new TypeError("At least one validated record is required");
   }
   const baseUrl = normaliseSiteUrl(siteUrl);
-  const ordered = [...records].sort((left, right) =>
-    right.published_at.localeCompare(left.published_at)
-  );
+  const ordered = [...records].sort((left, right) => {
+    const leftKey = timestampKey(left.published_at);
+    const rightKey = timestampKey(right.published_at);
+    if (leftKey === rightKey) return 0;
+    return leftKey < rightKey ? 1 : -1;
+  });
   const files = new Map([
     ["index.html", renderHome(ordered, baseUrl)],
     ["methodology/index.html", renderMethodology(baseUrl)],
