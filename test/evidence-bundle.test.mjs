@@ -39,6 +39,22 @@ function assertInvalid(mutator, path) {
 
 test("golden upstream evidence bundle validates with its exact byte digest", async () => {
   const provenance = JSON.parse(await readFile(PROVENANCE, "utf8"));
+  assert.deepEqual(Object.keys(provenance), [
+    "repository",
+    "commit",
+    "path",
+    "sha256",
+  ]);
+  assert.equal(
+    provenance.repository,
+    "https://github.com/ryanduguid/au-tax-legislation-corpus",
+  );
+  assert.match(provenance.commit, /^[0-9a-f]{40}$/);
+  assert.equal(
+    provenance.path,
+    "tests/corpus/fixtures/publication/evidence-bundle.v1.json",
+  );
+  assert.match(provenance.sha256, /^sha256:[0-9a-f]{64}$/);
   assert.deepEqual(validateEvidenceBundle(golden), { ok: true, value: golden });
   const parsed = parseEvidenceBundle(goldenBytes);
   assert.equal(parsed.bundle.schema_version, "evidence-bundle.v1");

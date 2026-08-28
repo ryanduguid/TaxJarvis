@@ -14,13 +14,35 @@ It contains one artificial fixture. It does not monitor sources, publish live pr
 
 - `npm run dev` builds once and serves `out/` at `http://127.0.0.1:4173/`.
 - `npm run build` creates the static artifact.
+- `npm run import-bundle -- --bundle incoming/evidence-bundle.v1.json --content-root content/developments` admits one live bundle under the rules below.
 - `npm test` runs the complete Node test suite.
 - `npm run check` performs syntax checks, builds and tests.
 - `npm run smoke` exercises the exported routes over loopback HTTP.
 
 ## Publication model
 
-`content/developments/dev-demo-001/development.json` is the only editorial record. HTML, RSS and JSON are generated projections. Invalid input stops the build before the current artifact is replaced.
+`content/developments/dev-demo-001/development.json` is the only checked-in
+editorial record. HTML, RSS and JSON are generated projections. Invalid input
+stops the build before the current artifact is replaced.
+
+The importer accepts one ordinary `evidence-bundle.v1` file of at most 1 MiB
+and an explicit ordinary content root. It parses UTF-8 and JSON strictly,
+rejects unknown fields and duplicate members, validates source identity,
+chronology, rights and evidence, and calculates `upstream.bundle_sha256` from
+the exact bytes received. It performs no network request and does not enrich
+the source record.
+
+The normal command rejects `mode: synthetic`; there is no command-line bypass.
+The synthetic override exists only on the reusable function so the conformance
+fixture can be exercised inside temporary test directories. A new record is
+written and revalidated in a private sibling directory, then promoted with one
+rename. Re-importing the same canonical bytes is an idempotent no-op. Any
+different hash, identity, revision or content is a conflict: this stage never
+deletes or overwrites an accepted development.
+
+This integration does not add a live source monitor, AI explainer, unattended
+publication or deployment. It establishes only the evidence-to-canonical
+contract needed before those later stages can be designed safely.
 
 Outside contributions are not accepted during this vertical slice. Contribution, correction, security and editorial policies must be approved before that changes.
 
