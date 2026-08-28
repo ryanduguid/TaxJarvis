@@ -1,0 +1,36 @@
+{
+  "schema_version": "development.v1",
+  "development_id": "dev-demo-001",
+  "title": "Demonstration source",
+  "authority_status": "operative-guidance",
+  "evidence_status": "verified",
+  "publication_status": "source-only",
+  "published_at": "2026-08-27T00:00:00Z",
+  "effective_at": null,
+  "topics": ["demonstration"],
+  "affected_practice_areas": ["tax practice"],
+  "sources": [
+    {
+      "source_id": "source-demo-001",
+      "publisher": "Demonstration publisher",
+      "document_class": "guidance",
+      "title": "Demonstration source",
+      "canonical_url": "https://example.invalid/demonstration-source",
+      "published_at": "2026-08-27T00:00:00Z",
+      "retrieved_at": "2026-08-28T00:00:00Z",
+      "rights": {
+        "mode": "metadata-only",
+        "attribution": "Demonstration source",
+        "licence_url": null
+      },
+      "evidence": []
+    }
+  ],
+  "explainer": null,
+  "revision": {
+    "number": 1,
+    "updated_at": "2026-08-28T00:00:00Z",
+    "change_note": "Initial demonstration record"
+  },
+  "fixture": true
+}
