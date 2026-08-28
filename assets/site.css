@@ -13,6 +13,7 @@
   --authority: #e3edf8;
   --evidence: #e4f1e8;
   --publication: #f4e9cf;
+  --mode: #eee8f7;
 }
 
 * {
@@ -126,7 +127,7 @@ article,
 
 .statuses {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.75rem;
   margin-block: 1.5rem;
 }
@@ -149,6 +150,10 @@ article,
   background: var(--publication);
 }
 
+.statuses div:nth-child(4) {
+  background: var(--mode);
+}
+
 .statuses dd {
   margin: 0.2rem 0 0;
   overflow-wrap: anywhere;
@@ -164,6 +169,11 @@ article,
 
 .notice h2 {
   margin-top: 0;
+}
+
+.synthetic-warning {
+  border-left-color: #9b5d00;
+  background: #fff8e8;
 }
 
 .source-list {
