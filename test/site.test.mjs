@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { validateDevelopment } from "../site.mjs";
+import {
+  renderSite,
+  validateDevelopment,
+} from "../site.mjs";
 
 const fixtureUrl = new URL(
   "../content/developments/dev-demo-001/development.json",
@@ -113,4 +116,99 @@ test("validation rejects sparse sources", () => {
   }));
   assert.equal(result.ok, false);
   assert.ok(result.errors.some(error => error.path === "sources[0]"));
+});
+
+test("rendering accepts HTTPS and loopback site URLs only", () => {
+  const loopback = renderSite([fixture], {
+    siteUrl: "http://127.0.0.1:4173",
+    cssText: "",
+  });
+  assert.match(loopback.get("index.html"), /http:\/\/127\.0\.0\.1:4173\//);
+  for (const siteUrl of ["http://publisher.example", "javascript:alert(1)"]) {
+    assert.throws(() => renderSite([fixture], { siteUrl, cssText: "" }));
+  }
+});
+
+test("rendering projects one identity and three statuses to every format", () => {
+  const files = renderSite([fixture], {
+    siteUrl: "https://publisher.example/project/",
+    cssText: "body { color: #111; }\n",
+  });
+
+  assert.deepEqual([...files.keys()].sort(), [
+    "assets/site.css",
+    "developments/dev-demo-001/index.html",
+    "feed.json",
+    "feed.xml",
+    "index.html",
+    "methodology/index.html",
+  ]);
+
+  const home = files.get("index.html");
+  const development = files.get("developments/dev-demo-001/index.html");
+  const methodology = files.get("methodology/index.html");
+  const rss = files.get("feed.xml");
+  const feed = JSON.parse(files.get("feed.json"));
+
+  for (const output of [home, development, rss, files.get("feed.json")]) {
+    assert.match(output, /dev-demo-001/);
+    assert.match(output, /Demonstration source/);
+    assert.match(output, /operative-guidance/);
+    assert.match(output, /verified/);
+    assert.match(output, /source-only/);
+  }
+  assert.match(home, new RegExp(fixture.revision.updated_at));
+  assert.match(development, new RegExp(fixture.revision.updated_at));
+  const rssUpdatedAt = rss.match(/<lastBuildDate>([^<]+)<\/lastBuildDate>/)[1];
+  assert.equal(
+    new Date(rssUpdatedAt).getTime(),
+    new Date(fixture.revision.updated_at).getTime(),
+  );
+  assert.equal(feed.updated_at, fixture.revision.updated_at);
+  assert.deepEqual(Object.keys(feed.items[0]), [
+    "development_id",
+    "url",
+    "title",
+    "authority_status",
+    "evidence_status",
+    "publication_status",
+    "updated_at",
+  ]);
+  assert.equal(
+    feed.items[0].url,
+    "https://publisher.example/project/developments/dev-demo-001/",
+  );
+  assert.match(home, /Demonstration record/);
+  assert.match(development, /No AI explainer has been published/);
+  assert.match(development, /source-demo-001/);
+  assert.match(development, /metadata-only/);
+  assert.match(development, /Initial demonstration record/);
+  assert.match(development, /Labels support browsing and are not advice/);
+  assert.match(methodology, /does not provide tax advice/i);
+  assert.match(methodology, /AI is not used in this vertical slice/i);
+  assert.doesNotMatch(development, /<a[^>]+example\.invalid/i);
+  assert.doesNotMatch(`${home}${development}${methodology}`, /<script\b/i);
+  assert.doesNotMatch(`${home}${development}${methodology}`, /confidence/i);
+});
+
+test("rendering escapes a hostile record instead of creating markup", () => {
+  const hostile = changed(value => {
+    value.title = `Tom & 'Ada' <img src=x onerror="alert(1)">`;
+    value.sources[0].publisher = `<script>alert(2)</script>`;
+  });
+  const files = renderSite([hostile], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  });
+  const html = [
+    files.get("index.html"),
+    files.get("developments/dev-demo-001/index.html"),
+  ].join("\n");
+  assert.doesNotMatch(html, /<img|<script/i);
+  assert.match(html, /&lt;img/);
+  assert.match(html, /&lt;script/);
+  assert.match(html, /Tom &amp; &#39;Ada&#39;/);
+  assert.match(files.get("feed.xml"), /&lt;img/);
+  assert.match(files.get("feed.xml"), /Tom &amp; &apos;Ada&apos;/);
+  assert.equal(JSON.parse(files.get("feed.json")).items[0].title, hostile.title);
 });

@@ -97,3 +97,283 @@ export function validateDevelopment(input) {
   if (input.fixture !== true) addError(errors, "fixture", "must be true");
   return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
 }
+
+function escapeHtml(value) {
+  return String(value).replace(
+    /[&<>"']/g,
+    character => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    })[character],
+  );
+}
+
+function escapeXml(value) {
+  return String(value).replace(
+    /[&<>"']/g,
+    character => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&apos;",
+    })[character],
+  );
+}
+
+function normaliseSiteUrl(value) {
+  const url = new URL(value);
+  const loopback =
+    url.protocol === "http:" &&
+    new Set(["127.0.0.1", "localhost", "[::1]"]).has(url.hostname);
+  if (url.protocol !== "https:" && !loopback) {
+    throw new TypeError("SITE_URL must use HTTPS or a loopback HTTP origin");
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new TypeError("SITE_URL must not contain credentials, query or fragment");
+  }
+  if (!url.pathname.endsWith("/")) url.pathname += "/";
+  return url.href;
+}
+
+function absoluteUrl(siteUrl, path) {
+  return new URL(path.replace(/^\/+/, ""), siteUrl).href;
+}
+
+function formatDate(timestamp) {
+  return new Intl.DateTimeFormat("en-AU", {
+    dateStyle: "long",
+    timeZone: "UTC",
+  }).format(new Date(timestamp));
+}
+
+const SITE_NAME = "Australian Tax Intelligence";
+
+function statusList(record) {
+  return `
+    <dl class="statuses" aria-label="Development status">
+      <div><dt>Authority</dt><dd>${escapeHtml(record.authority_status)}</dd></div>
+      <div><dt>Evidence</dt><dd>${escapeHtml(record.evidence_status)}</dd></div>
+      <div><dt>Publication</dt><dd>${escapeHtml(record.publication_status)}</dd></div>
+    </dl>`;
+}
+
+function layout({ title, body, siteUrl }) {
+  const homeUrl = absoluteUrl(siteUrl, "/");
+  const methodologyUrl = absoluteUrl(siteUrl, "/methodology/");
+  const cssUrl = absoluteUrl(siteUrl, "/assets/site.css");
+  return `<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>${escapeHtml(title)} | ${SITE_NAME}</title>
+  <link rel="stylesheet" href="${escapeHtml(cssUrl)}">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="site-name" href="${escapeHtml(homeUrl)}">${SITE_NAME}</a>
+    <nav aria-label="Primary"><a href="${escapeHtml(methodologyUrl)}">Methodology</a></nav>
+  </header>
+  <main id="main">${body}</main>
+  <footer><p>Evidence-first information for professional source checking. Not tax advice.</p></footer>
+</body>
+</html>
+`;
+}
+
+function developmentUrl(siteUrl, record) {
+  return absoluteUrl(siteUrl, `/developments/${record.development_id}/`);
+}
+
+function renderHome(records, siteUrl) {
+  const items = records.map(record => `
+    <article class="development-card">
+      <p class="eyebrow">Demonstration record</p>
+      <h2><a href="${escapeHtml(developmentUrl(siteUrl, record))}">${escapeHtml(record.title)}</a></h2>
+      <p>Published <time datetime="${escapeHtml(record.published_at)}">${escapeHtml(formatDate(record.published_at))}</time> · updated <time datetime="${escapeHtml(record.revision.updated_at)}">${escapeHtml(formatDate(record.revision.updated_at))}</time></p>
+      ${statusList(record)}
+      <p><strong>Affected practice:</strong> ${record.affected_practice_areas.map(escapeHtml).join(", ")}</p>
+    </article>`).join("");
+
+  return layout({
+    title: "Recent developments",
+    siteUrl,
+    body: `
+      <section class="hero">
+        <p class="eyebrow">Source-only demonstration</p>
+        <h1>Australian tax and accounting developments</h1>
+        <p>This vertical slice contains one non-production fixture and no AI explanation.</p>
+      </section>
+      <section aria-labelledby="recent"><h2 id="recent">Recent developments</h2>${items}</section>`,
+  });
+}
+
+function renderSource(source, fixture) {
+  const parsed = new URL(source.canonical_url);
+  const sourceLocation =
+    fixture && parsed.hostname.endsWith(".invalid")
+      ? `<code>${escapeHtml(source.canonical_url)}</code>`
+      : `<a href="${escapeHtml(parsed.href)}" rel="external noopener">Open official source</a>`;
+  const licenceUrl = source.rights.licence_url === null
+    ? null
+    : new URL(source.rights.licence_url);
+  const licenceLocation = licenceUrl === null
+    ? "No separate licence URL supplied."
+    : fixture && licenceUrl.hostname.endsWith(".invalid")
+      ? `<code>${escapeHtml(licenceUrl.href)}</code>`
+      : `<a href="${escapeHtml(licenceUrl.href)}" rel="external noopener">Source licence</a>`;
+  return `
+    <li>
+      <p><strong>${escapeHtml(source.title)}</strong></p>
+      <p><code>${escapeHtml(source.source_id)}</code>, ${escapeHtml(source.publisher)}, ${escapeHtml(source.document_class)}</p>
+      <p>${sourceLocation}</p>
+      <p>Published <time datetime="${escapeHtml(source.published_at)}">${escapeHtml(formatDate(source.published_at))}</time> · retrieved <time datetime="${escapeHtml(source.retrieved_at)}">${escapeHtml(formatDate(source.retrieved_at))}</time></p>
+      <p>Rights: ${escapeHtml(source.rights.mode)} · attribution: ${escapeHtml(source.rights.attribution)}</p>
+      <p>${licenceLocation}</p>
+    </li>`;
+}
+
+function renderDevelopment(record, siteUrl) {
+  return layout({
+    title: record.title,
+    siteUrl,
+    body: `
+      <article>
+        <p class="eyebrow">Demonstration record · Source-only</p>
+        <h1>${escapeHtml(record.title)}</h1>
+        <p>Development ID: <code>${escapeHtml(record.development_id)}</code></p>
+        <p>Published <time datetime="${escapeHtml(record.published_at)}">${escapeHtml(formatDate(record.published_at))}</time> · updated <time datetime="${escapeHtml(record.revision.updated_at)}">${escapeHtml(formatDate(record.revision.updated_at))}</time></p>
+        <p>Effective date: ${record.effective_at === null ? "not separately supplied" : `<time datetime="${escapeHtml(record.effective_at)}">${escapeHtml(formatDate(record.effective_at))}</time>`}.</p>
+        ${statusList(record)}
+        <aside class="notice" aria-labelledby="explainer-status">
+          <h2 id="explainer-status">Explainer status</h2>
+          <p>No AI explainer has been published for this source-only record.</p>
+        </aside>
+        <section aria-labelledby="practice"><h2 id="practice">Affected practice areas</h2>
+          <ul>${record.affected_practice_areas.map(area => `<li>${escapeHtml(area)}</li>`).join("")}</ul>
+        </section>
+        <section aria-labelledby="topics"><h2 id="topics">Topics</h2>
+          <ul>${record.topics.map(topic => `<li>${escapeHtml(topic)}</li>`).join("")}</ul>
+          <p>Labels support browsing and are not advice.</p>
+        </section>
+        <section aria-labelledby="sources"><h2 id="sources">Primary sources</h2>
+          <ul class="source-list">${record.sources.map(source => renderSource(source, record.fixture)).join("")}</ul>
+        </section>
+        <section aria-labelledby="revision"><h2 id="revision">Revision</h2>
+          <p>Revision ${escapeHtml(record.revision.number)}: ${escapeHtml(record.revision.change_note)}</p>
+        </section>
+        <section aria-labelledby="status-definitions"><h2 id="status-definitions">Status definitions</h2>
+          <dl>
+            <dt>Authority status</dt><dd>What kind of official development this is.</dd>
+            <dt>Evidence status</dt><dd>Whether the source record passed the evidence checks.</dd>
+            <dt>Publication status</dt><dd>Whether this page contains source material only or a separately gated explanation.</dd>
+          </dl>
+        </section>
+      </article>`,
+  });
+}
+
+function renderMethodology(siteUrl) {
+  return layout({
+    title: "Methodology",
+    siteUrl,
+    body: `
+      <article class="prose">
+        <p class="eyebrow">Methodology</p>
+        <h1>Evidence before publication</h1>
+        <p>This demonstration publishes only validated metadata from one clearly labelled, non-production source fixture.</p>
+        <h2>Sources and abstention</h2>
+        <p>The intended service relies on authoritative primary sources. If identity, status, freshness, integrity or reuse rights cannot be established, an item is held rather than filled with plausible prose.</p>
+        <h2>Artificial intelligence</h2>
+        <p>AI is not used in this vertical slice. An explainer requires a separately designed writer, independent verifier and deterministic publication gate.</p>
+        <h2>Limitations</h2>
+        <p>This service does not provide tax advice, replace professional judgement or remove the need to check the official source.</p>
+        <h2>Licensing</h2>
+        <p>Original code is AGPL-3.0-only. Separate terms apply to original content, factual data, reserved marks and third-party source material.</p>
+      </article>`,
+  });
+}
+
+function renderFeedJson(records, siteUrl) {
+  const updatedAt = records
+    .map(record => record.revision.updated_at)
+    .sort()
+    .at(-1);
+  return `${JSON.stringify({
+    schema_version: "feed.v1",
+    updated_at: updatedAt,
+    items: records.map(record => ({
+      development_id: record.development_id,
+      url: developmentUrl(siteUrl, record),
+      title: record.title,
+      authority_status: record.authority_status,
+      evidence_status: record.evidence_status,
+      publication_status: record.publication_status,
+      updated_at: record.revision.updated_at,
+    })),
+  }, null, 2)}\n`;
+}
+
+function renderFeedXml(records, siteUrl) {
+  const updatedAt = records
+    .map(record => record.revision.updated_at)
+    .sort()
+    .at(-1);
+  const items = records.map(record => {
+    const url = developmentUrl(siteUrl, record);
+    const description = [
+      `Authority: ${record.authority_status}`,
+      `Evidence: ${record.evidence_status}`,
+      `Publication: ${record.publication_status}`,
+    ].join("; ");
+    return `
+    <item>
+      <guid isPermaLink="false">${escapeXml(record.development_id)}</guid>
+      <title>${escapeXml(record.title)}</title>
+      <link>${escapeXml(url)}</link>
+      <pubDate>${escapeXml(new Date(record.published_at).toUTCString())}</pubDate>
+      <description>${escapeXml(description)}</description>
+    </item>`;
+  }).join("");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>${SITE_NAME}</title>
+    <link>${escapeXml(siteUrl)}</link>
+    <description>Validated Australian tax and accounting source developments.</description>
+    <lastBuildDate>${escapeXml(new Date(updatedAt).toUTCString())}</lastBuildDate>${items}
+  </channel>
+</rss>
+`;
+}
+
+export function renderSite(records, { siteUrl, cssText }) {
+  if (!Array.isArray(records) || records.length === 0) {
+    throw new TypeError("At least one validated record is required");
+  }
+  const baseUrl = normaliseSiteUrl(siteUrl);
+  const ordered = [...records].sort((left, right) =>
+    right.published_at.localeCompare(left.published_at)
+  );
+  const files = new Map([
+    ["index.html", renderHome(ordered, baseUrl)],
+    ["methodology/index.html", renderMethodology(baseUrl)],
+    ["feed.xml", renderFeedXml(ordered, baseUrl)],
+    ["feed.json", renderFeedJson(ordered, baseUrl)],
+    ["assets/site.css", cssText],
+  ]);
+  for (const record of ordered) {
+    files.set(
+      `developments/${record.development_id}/index.html`,
+      renderDevelopment(record, baseUrl),
+    );
+  }
+  return files;
+}
