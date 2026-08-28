@@ -245,9 +245,7 @@ async function publishStagedOutput({ rootDir, outputDir, stagingDir }) {
       }
       throw new Error("Unable to publish staged output");
     }
-    if (!await removePrivateDirectory(backupDir)) {
-      throw new Error("Unable to clean private build output");
-    }
+    await removePrivateDirectory(backupDir);
   } catch (error) {
     if (!previousOutputMoved && !await removePrivateDirectory(backupDir)) {
       throw new Error("Unable to clean private build output");

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import {
   cp,
   lstat,
@@ -11,6 +12,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -310,6 +312,47 @@ async function readArtifact(outputDir, paths) {
   ])));
 }
 
+async function preventBackupCleanup(rootDir, outputDir) {
+  const lockPath = join(outputDir, "zzzz-cleanup-lock.txt");
+  for (let index = 0; index < 5000; index += 1) {
+    await writeFile(join(outputDir, `aaa-padding-${String(index).padStart(4, "0")}.txt`), "x");
+  }
+  await writeFile(lockPath, "preserve this file");
+  const command = "[Console]::Out.WriteLine(\"watching\"); [Console]::Out.Flush(); while (-not (Test-Path -LiteralPath $env:TAX_PUBLISHER_LOCK_FILE)) { Start-Sleep -Milliseconds 1 }; $file = [System.IO.File]::Open($env:TAX_PUBLISHER_LOCK_FILE, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None); [Console]::Out.WriteLine(\"locked\"); [Console]::Out.Flush(); Start-Sleep -Seconds 30; $file.Dispose()";
+  const child = spawn("powershell.exe", ["-NoProfile", "-Command", command], {
+    env: {
+      ...process.env,
+      TAX_PUBLISHER_LOCK_FILE: join(rootDir, ".out-previous", "out", "zzzz-cleanup-lock.txt"),
+    },
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  child.stdout.setEncoding("utf8");
+  let watchingResolve;
+  let watchingReject;
+  let lockHeld = false;
+  const watching = new Promise((resolve, reject) => {
+    watchingResolve = resolve;
+    watchingReject = reject;
+  });
+  child.stdout.on("data", data => {
+    if (data.includes("watching")) watchingResolve();
+    if (data.includes("locked")) lockHeld = true;
+  });
+  child.once("error", watchingReject);
+  child.once("exit", code => watchingReject(new Error(`lock process exited with ${code}`)));
+  await watching;
+  return {
+    lockPath,
+    lockHeld: () => lockHeld,
+    release: async () => {
+      child.kill();
+      if (child.exitCode === null && child.signalCode === null) {
+        await once(child, "exit");
+      }
+    },
+  };
+}
+
 test("build writes exactly the six static outputs", async t => {
   const workspace = await temporaryPublisher(t);
   const written = await buildSite({
@@ -497,4 +540,37 @@ test("build preserves the previous artifact when staged publication fails", asyn
   await assert.rejects(() => lstat(join(workspace.rootDir, ".out-staging")), {
     code: "ENOENT",
   });
+});
+
+test("build does not report failure after cleanup cannot remove the old artifact", {
+  skip: process.platform !== "win32" && "requires Windows file-sharing semantics",
+}, async t => {
+  const workspace = await temporaryPublisher(t);
+  const paths = await buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  });
+  const blocker = await preventBackupCleanup(workspace.rootDir, workspace.outputDir);
+  const replacement = changed(value => { value.title = "Replacement demonstration source"; });
+  await writeFile(workspace.recordPath, JSON.stringify(replacement));
+
+  try {
+    let failure;
+    try {
+      await buildSite({
+        rootDir: workspace.rootDir,
+        siteUrl: "https://publisher.example/",
+      });
+    } catch (error) {
+      failure = error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(blocker.lockHeld(), true);
+    assert.equal(failure, undefined);
+    const after = await readArtifact(workspace.outputDir, paths);
+    assert.match(after["index.html"], /Replacement demonstration source/);
+    await assert.rejects(() => lstat(blocker.lockPath), { code: "ENOENT" });
+  } finally {
+    await blocker.release();
+  }
 });
