@@ -13,9 +13,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { once } from "node:events";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { startServer } from "../serve.mjs";
 import {
   buildSite,
   renderSite,
@@ -304,6 +306,107 @@ async function temporaryPublisher(t) {
   await cp(new URL("../assets/site.css", import.meta.url), join(rootDir, "assets", "site.css"));
   return { rootDir, recordPath, outputDir: join(rootDir, "out") };
 }
+
+function httpRequest({ hostname, port, path, method = "GET" }) {
+  return new Promise((resolve, reject) => {
+    const outgoing = request({ hostname, port, path, method }, response => {
+      const chunks = [];
+      response.on("data", chunk => chunks.push(chunk));
+      response.on("end", () => resolve({
+        statusCode: response.statusCode,
+        headers: response.headers,
+        body: Buffer.concat(chunks).toString("utf8"),
+      }));
+    });
+    outgoing.once("error", reject);
+    outgoing.end();
+  });
+}
+
+test("smoke: serves only public routes and denies unsafe request targets", async t => {
+  const workspace = await temporaryPublisher(t);
+  await buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "http://127.0.0.1:4173/",
+  });
+  await writeFile(join(workspace.outputDir, "private.txt"), "not public");
+  const outsideDir = join(workspace.rootDir, "outside");
+  await mkdir(outsideDir);
+  await writeFile(join(outsideDir, "secret.txt"), "not public");
+  await symlink(outsideDir, join(workspace.outputDir, "linked"), "junction");
+
+  const server = await startServer({
+    rootDir: workspace.outputDir,
+    hostname: "127.0.0.1",
+    port: 0,
+  });
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const address = server.address();
+
+  for (const [path, contentType, marker] of [
+    ["/", /text\/html/, "Recent developments"],
+    ["/developments/dev-demo-001/", /text\/html/, "No AI explainer"],
+    ["/methodology/", /text\/html/, "Evidence before publication"],
+    ["/feed.xml", /application\/rss\+xml/, "<rss"],
+    ["/feed.json", /application\/json/, "\"schema_version\""],
+    ["/assets/site.css", /text\/css/, "font-family"],
+  ]) {
+    const response = await httpRequest({
+      hostname: "127.0.0.1",
+      port: address.port,
+      path,
+    });
+    assert.equal(response.statusCode, 200, path);
+    assert.match(response.headers["content-type"], contentType);
+    assert.match(response.body, new RegExp(marker));
+  }
+
+  const head = await httpRequest({
+    hostname: "127.0.0.1",
+    port: address.port,
+    path: "/feed.json",
+    method: "HEAD",
+  });
+  assert.equal(head.statusCode, 200);
+  assert.equal(head.body, "");
+  assert.match(head.headers["content-type"], /application\/json/);
+
+  for (const path of [
+    "/../package.json",
+    "/%2e%2e/package.json",
+    "/..%2fpackage.json",
+    "/%5c..%5cpackage.json",
+    "/%252e%252e%252fpackage.json",
+    "/assets%2fsite.css",
+    "/linked/secret.txt",
+  ]) {
+    const response = await httpRequest({
+      hostname: "127.0.0.1",
+      port: address.port,
+      path,
+    });
+    assert.equal(response.statusCode, 403, path);
+    assert.equal(response.body, "Forbidden\n");
+  }
+
+  for (const [path, expectedStatus, expectedBody] of [
+    ["/%E0%A4%A", 400, "Bad request\n"],
+    ["/missing/", 404, "Not found\n"],
+    ["/private.txt", 404, "Not found\n"],
+    ["/feed.json", 405, "Method not allowed\n"],
+  ]) {
+    const response = await httpRequest({
+      hostname: "127.0.0.1",
+      port: address.port,
+      path,
+      method: expectedStatus === 405 ? "POST" : "GET",
+    });
+    assert.equal(response.statusCode, expectedStatus, path);
+    assert.equal(response.body, expectedBody, path);
+    assert.match(response.headers["content-type"], /text\/plain/);
+    assert.equal(response.headers["x-content-type-options"], "nosniff");
+  }
+});
 
 async function readArtifact(outputDir, paths) {
   return Object.fromEntries(await Promise.all(paths.map(async path => [
