@@ -235,8 +235,12 @@ and is never presented as current coverage.
 
 Every public format continues to derive from the canonical record. The
 homepage, development page, RSS and JSON Feed must agree on identity, title,
-statuses and revision time. Source-event and provenance detail may appear only
-where the format can carry it without inventing another editorial record.
+mode, statuses and revision time. JSON Feed advances explicitly to `feed.v2`
+and adds `mode` to every item. RSS includes the mode in its item description.
+The v1 demonstration record normalises to `mode: synthetic`, so the current
+fixture also becomes unambiguous to machine consumers. Source-event and
+provenance detail may appear only where the format can carry it without
+inventing another editorial record.
 
 ## 8. Import behaviour
 
@@ -311,7 +315,8 @@ The importer never deletes or overwrites an accepted record in this slice.
 - synthetic-mode command rejection;
 - successful isolated import, re-read validation and idempotent re-import;
 - conflict and injected write/promotion failure with existing content intact;
-- v1 and v2 rendering projections, escaping and status labelling; and
+- v1 and v2 rendering projections, escaping, status labelling and mode in both
+  feeds; and
 - complete existing `npm run check` and `npm run smoke` regression suites.
 
 The same golden JSON bytes must exist in both repositories. A local conformance
@@ -341,8 +346,8 @@ the other's fixture during its normal test run.
    unchanged.
 6. An imported v2 record can generate all public formats without a parallel
    editorial representation.
-7. Synthetic status remains unmistakable and the normal import command refuses
-   synthetic material.
+7. Synthetic status remains unmistakable in HTML, RSS and JSON Feed, and the
+   normal import command refuses synthetic material.
 8. Existing source-only behaviour and tests continue to pass.
 9. Neither build nor import uses network access, AI, a package dependency,
    secrets or a production database.
