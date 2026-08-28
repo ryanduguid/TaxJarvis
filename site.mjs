@@ -10,10 +10,20 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { validateCanonicalDevelopmentV2 } from "./evidence-bundle.mjs";
+import {
+  exactKeys,
+  httpsUrl,
+  isArtificialHostname,
+  isIdentifier,
+  isRecord,
+  labelList,
+  oneOf,
+  text,
+  timestampKey,
+  utcTimestamp,
+} from "./validation-primitives.mjs";
 
-const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{2,79}$/;
-const UTC_TIMESTAMP =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
 const AUTHORITY_STATUSES = new Set(["consultation", "introduced", "made-not-effective", "in-force", "operative-guidance", "decision", "withdrawn", "superseded"]);
 const EVIDENCE_STATUSES = new Set(["verified", "insufficient", "conflicting", "stale"]);
 const DEVELOPMENT_KEYS = new Set(["schema_version", "development_id", "title", "authority_status", "evidence_status", "publication_status", "published_at", "effective_at", "topics", "affected_practice_areas", "sources", "explainer", "revision", "fixture"]);
@@ -21,74 +31,9 @@ const SOURCE_KEYS = new Set(["source_id", "publisher", "document_class", "title"
 const RIGHTS_KEYS = new Set(["mode", "attribution", "licence_url"]);
 const REVISION_KEYS = new Set(["number", "updated_at", "change_note"]);
 
-export function isRecord(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
-export function isIdentifier(value) { return typeof value === "string" && IDENTIFIER.test(value); }
 function addError(errors, path, message) { errors.push({ path, message }); }
-export function exactKeys(errors, value, path, allowed) {
-  if (!isRecord(value)) { addError(errors, path, "must be an object"); return false; }
-  for (const key of Object.keys(value)) if (!allowed.has(key)) addError(errors, path === "$" ? key : `${path}.${key}`, "is not allowed");
-  return true;
-}
-export function isXmlText(value) {
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    if (
-      codePoint !== 0x09 &&
-      codePoint !== 0x0a &&
-      codePoint !== 0x0d &&
-      (codePoint < 0x20 || codePoint > 0xd7ff) &&
-      (codePoint < 0xe000 || codePoint > 0xfffd) &&
-      (codePoint < 0x10000 || codePoint > 0x10ffff)
-    ) return false;
-  }
-  return true;
-}
-export function text(errors, value, path, maximum) {
-  if (typeof value !== "string" || value.length === 0 || value.trim() !== value || value.length > maximum || !isXmlText(value)) {
-    addError(errors, path, `must be trimmed text of 1 to ${maximum} characters`); return false;
-  }
-  return true;
-}
-export function oneOf(errors, value, path, allowed) { if (!allowed.has(value)) { addError(errors, path, "has an unsupported value"); return false; } return true; }
-export function timestampKey(value) {
-  if (typeof value !== "string") return null;
-  const match = UTC_TIMESTAMP.exec(value);
-  if (match === null) return null;
-  return `${value.slice(0, 19)}.${(match[7] ?? "").padEnd(9, "0")}Z`;
-}
-export function utcTimestamp(errors, value, path, { nullable = false } = {}) {
-  if (nullable && value === null) return null;
-  if (typeof value !== "string") { addError(errors, path, "must be an RFC 3339 UTC timestamp"); return null; }
-  const match = UTC_TIMESTAMP.exec(value); const key = timestampKey(value); const milliseconds = Date.parse(value);
-  if (!match || key === null || !Number.isFinite(milliseconds)) { addError(errors, path, "must be an RFC 3339 UTC timestamp"); return null; }
-  const parsed = new Date(milliseconds); const parts = match.slice(1, 7).map(Number);
-  const actual = [parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate(), parsed.getUTCHours(), parsed.getUTCMinutes(), parsed.getUTCSeconds()];
-  if (parts.some((part, index) => part !== actual[index])) { addError(errors, path, "must identify a real UTC date and time"); return null; }
-  return key;
-}
-export function isArtificialHostname(hostname) {
-  const normalised = hostname.toLowerCase().replace(/\.+$/, "");
-  return normalised === "invalid" || normalised.endsWith(".invalid");
-}
-export function httpsUrl(errors, value, path, { nullable = false, allowInvalidHost = false } = {}) {
-  if (nullable && value === null) return null;
-  if (typeof value !== "string" || value.length > 2048) { addError(errors, path, "must be an HTTPS URL of at most 2048 characters"); return null; }
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password || (!allowInvalidHost && isArtificialHostname(parsed.hostname))) throw new TypeError("unsafe URL");
-    return parsed;
-  } catch { addError(errors, path, "must be a permitted HTTPS URL"); return null; }
-}
-export function labelList(errors, value, path) {
-  if (!Array.isArray(value) || value.length > 20) { addError(errors, path, "must be an array of at most 20 labels"); return; }
-  const seen = new Set();
-  for (let index = 0; index < value.length; index += 1) {
-    const label = value[index];
-    if (text(errors, label, `${path}[${index}]`, 80)) { if (seen.has(label)) addError(errors, path, "must contain unique labels"); seen.add(label); }
-  }
-}
 
-export function validateDevelopment(input) {
+function validateDevelopmentV1(input) {
   const errors = [];
   if (!exactKeys(errors, input, "$", DEVELOPMENT_KEYS)) return { ok: false, errors };
   if (input.schema_version !== "development.v1") addError(errors, "schema_version", "must equal development.v1");
@@ -133,6 +78,22 @@ export function validateDevelopment(input) {
   }
   if (input.fixture !== true) addError(errors, "fixture", "must be true");
   return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
+}
+
+export function validateDevelopment(input) {
+  if (!isRecord(input)) {
+    return { ok: false, errors: [{ path: "$", message: "must be an object" }] };
+  }
+  if (input.schema_version === "development.v1") {
+    return validateDevelopmentV1(input);
+  }
+  if (input.schema_version === "development.v2") {
+    return validateCanonicalDevelopmentV2(input);
+  }
+  return {
+    ok: false,
+    errors: [{ path: "schema_version", message: "has an unsupported value" }],
+  };
 }
 
 async function loadDevelopments({ contentDir }) {
@@ -331,12 +292,23 @@ function formatDate(timestamp) {
 
 const SITE_NAME = "Australian Tax Intelligence";
 
+function modeLabel(mode) {
+  return mode === "live" ? "Live" : "Synthetic";
+}
+
+function recordLabel(mode) {
+  return mode === "live"
+    ? "Live · Source-only"
+    : "Demonstration record · Synthetic · Source-only";
+}
+
 function statusList(record) {
   return `
     <dl class="statuses" aria-label="Development status">
       <div><dt>Authority</dt><dd>${escapeHtml(record.authority_status)}</dd></div>
       <div><dt>Evidence</dt><dd>${escapeHtml(record.evidence_status)}</dd></div>
       <div><dt>Publication</dt><dd>${escapeHtml(record.publication_status)}</dd></div>
+      <div><dt>Mode</dt><dd>${escapeHtml(modeLabel(record.mode))}</dd></div>
     </dl>`;
 }
 
@@ -373,30 +345,31 @@ function developmentUrl(siteUrl, record) {
 function renderHome(records, siteUrl) {
   const items = records.map(record => `
     <article class="development-card">
-      <p class="eyebrow">Demonstration record</p>
+      <p class="eyebrow">${escapeHtml(recordLabel(record.mode))}</p>
       <h2><a href="${escapeHtml(developmentUrl(siteUrl, record))}">${escapeHtml(record.title)}</a></h2>
       <p>Published <time datetime="${escapeHtml(record.published_at)}">${escapeHtml(formatDate(record.published_at))}</time> · updated <time datetime="${escapeHtml(record.revision.updated_at)}">${escapeHtml(formatDate(record.revision.updated_at))}</time></p>
       ${statusList(record)}
       <p><strong>Affected practice:</strong> ${record.affected_practice_areas.map(escapeHtml).join(", ")}</p>
     </article>`).join("");
 
+  const containsLive = records.some(record => record.mode === "live");
   return layout({
     title: "Recent developments",
     siteUrl,
     body: `
       <section class="hero">
-        <p class="eyebrow">Source-only demonstration</p>
+        <p class="eyebrow">${containsLive ? "Source-only tax intelligence" : "Source-only demonstration"}</p>
         <h1>Australian tax and accounting developments</h1>
-        <p>This vertical slice contains one non-production fixture and no AI explanation.</p>
+        <p>${containsLive ? "Validated source developments, with no AI explanation published in this stage." : "This vertical slice contains only non-production fixtures and no AI explanation."}</p>
       </section>
       <section aria-labelledby="recent"><h2 id="recent">Recent developments</h2>${items}</section>`,
   });
 }
 
-function renderSource(source, fixture) {
+function renderSource(source, mode) {
   const parsed = new URL(source.canonical_url);
   const sourceLocation =
-    fixture && isArtificialHostname(parsed.hostname)
+    mode === "synthetic" && isArtificialHostname(parsed.hostname)
       ? `<code>${escapeHtml(source.canonical_url)}</code>`
       : `<a href="${escapeHtml(parsed.href)}" rel="external noopener">Open official source</a>`;
   const licenceUrl = source.rights.licence_url === null
@@ -404,7 +377,7 @@ function renderSource(source, fixture) {
     : new URL(source.rights.licence_url);
   const licenceLocation = licenceUrl === null
     ? "No separate licence URL supplied."
-    : fixture && isArtificialHostname(licenceUrl.hostname)
+    : mode === "synthetic" && isArtificialHostname(licenceUrl.hostname)
       ? `<code>${escapeHtml(licenceUrl.href)}</code>`
       : `<a href="${escapeHtml(licenceUrl.href)}" rel="external noopener">Source licence</a>`;
   return `
@@ -419,17 +392,25 @@ function renderSource(source, fixture) {
 }
 
 function renderDevelopment(record, siteUrl) {
+  const syntheticWarning = record.mode === "synthetic"
+    ? `
+        <aside class="notice synthetic-warning" aria-labelledby="synthetic-status">
+          <h2 id="synthetic-status">Synthetic development</h2>
+          <p>This is demonstration data, not current professional coverage. Do not rely on it for client work.</p>
+        </aside>`
+    : "";
   return layout({
     title: record.title,
     siteUrl,
     body: `
       <article>
-        <p class="eyebrow">Demonstration record · Source-only</p>
+        <p class="eyebrow">${escapeHtml(recordLabel(record.mode))}</p>
         <h1>${escapeHtml(record.title)}</h1>
         <p>Development ID: <code>${escapeHtml(record.development_id)}</code></p>
         <p>Published <time datetime="${escapeHtml(record.published_at)}">${escapeHtml(formatDate(record.published_at))}</time> · updated <time datetime="${escapeHtml(record.revision.updated_at)}">${escapeHtml(formatDate(record.revision.updated_at))}</time></p>
         <p>Effective date: ${record.effective_at === null ? "not separately supplied" : `<time datetime="${escapeHtml(record.effective_at)}">${escapeHtml(formatDate(record.effective_at))}</time>`}.</p>
         ${statusList(record)}
+        ${syntheticWarning}
         <aside class="notice" aria-labelledby="explainer-status">
           <h2 id="explainer-status">Explainer status</h2>
           <p>No AI explainer has been published for this source-only record.</p>
@@ -442,7 +423,7 @@ function renderDevelopment(record, siteUrl) {
           <p>Labels support browsing and are not advice.</p>
         </section>
         <section aria-labelledby="sources"><h2 id="sources">Primary sources</h2>
-          <ul class="source-list">${record.sources.map(source => renderSource(source, record.fixture)).join("")}</ul>
+          <ul class="source-list">${record.sources.map(source => renderSource(source, record.mode)).join("")}</ul>
         </section>
         <section aria-labelledby="revision"><h2 id="revision">Revision</h2>
           <p>Revision ${escapeHtml(record.revision.number)}: ${escapeHtml(record.revision.change_note)}</p>
@@ -491,12 +472,13 @@ function latestUpdatedAt(records) {
 function renderFeedJson(records, siteUrl) {
   const updatedAt = latestUpdatedAt(records);
   return `${JSON.stringify({
-    schema_version: "feed.v1",
+    schema_version: "feed.v2",
     updated_at: updatedAt,
     items: records.map(record => ({
       development_id: record.development_id,
       url: developmentUrl(siteUrl, record),
       title: record.title,
+      mode: record.mode,
       authority_status: record.authority_status,
       evidence_status: record.evidence_status,
       publication_status: record.publication_status,
@@ -513,6 +495,7 @@ function renderFeedXml(records, siteUrl) {
       `Authority: ${record.authority_status}`,
       `Evidence: ${record.evidence_status}`,
       `Publication: ${record.publication_status}`,
+      `Mode: ${record.mode}`,
     ].join("; ");
     return `
     <item>
@@ -542,7 +525,10 @@ export function renderSite(records, { siteUrl, cssText }) {
     throw new TypeError("At least one validated record is required");
   }
   const baseUrl = normaliseSiteUrl(siteUrl);
-  const ordered = [...records].sort((left, right) => {
+  const views = records.map(record => record.schema_version === "development.v1"
+    ? { ...record, mode: "synthetic" }
+    : record);
+  const ordered = [...views].sort((left, right) => {
     const leftKey = timestampKey(left.published_at);
     const rightKey = timestampKey(right.published_at);
     if (leftKey === rightKey) return 0;

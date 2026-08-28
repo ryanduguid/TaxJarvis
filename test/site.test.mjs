@@ -19,6 +19,10 @@ import { createConnection, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import {
+  parseEvidenceBundle,
+  transformEvidenceBundle,
+} from "../evidence-bundle.mjs";
 import { startServer } from "../serve.mjs";
 import {
   buildSite,
@@ -31,6 +35,14 @@ const fixtureUrl = new URL(
   import.meta.url,
 );
 const fixture = JSON.parse(await readFile(fixtureUrl, "utf8"));
+const bundleFixtureUrl = new URL(
+  "./fixtures/evidence-bundle.v1.json",
+  import.meta.url,
+);
+const parsedBundleFixture = parseEvidenceBundle(await readFile(bundleFixtureUrl));
+const v2Fixture = transformEvidenceBundle(parsedBundleFixture.bundle, {
+  bundleSha256: parsedBundleFixture.bundleSha256,
+});
 
 test("repository contract: package has no package graph", async () => {
   const packageJson = JSON.parse(
@@ -49,6 +61,37 @@ test("canonical fixture: validation accepts the source-only record", () => {
     value: fixture,
   });
 });
+
+test("development.v2 accepts the exact imported canonical record", () => {
+  assert.deepEqual(validateDevelopment(v2Fixture), {
+    ok: true,
+    value: v2Fixture,
+  });
+});
+
+const v2Mutations = [
+  ["mode", value => { value.mode = "preview"; }, "mode"],
+  ["source event", value => { value.source_event.kind = "amended"; }, "source_event.kind"],
+  ["source evidence identity", value => { value.sources[0].evidence_id = "bad id"; }, "sources[0].evidence_id"],
+  ["source content digest", value => { value.sources[0].content_sha256 = "sha256:ABC"; }, "sources[0].content_sha256"],
+  ["source content kind", value => { value.sources[0].content_kind = "summary"; }, "sources[0].content_kind"],
+  ["source media type", value => { value.sources[0].content_media_type = "text/plain"; }, "sources[0].content_media_type"],
+  ["upstream bundle identifier", value => { value.upstream.bundle_id = "bad id"; }, "upstream.bundle_id"],
+  ["upstream bundle digest", value => { value.upstream.bundle_sha256 = "sha256:ABC"; }, "upstream.bundle_sha256"],
+  ["upstream producer baseline digest", value => { value.upstream.producer.baseline_sha256 = "sha256:ABC"; }, "upstream.producer.baseline_sha256"],
+  ["upstream observation digest", value => { value.upstream.producer.observation_facts_sha256 = "sha256:ABC"; }, "upstream.producer.observation_facts_sha256"],
+  ["revision replacement", value => { value.revision.replaces_bundle_id = "bundle-old"; }, "revision.replaces_bundle_id"],
+];
+
+for (const [name, mutator, path] of v2Mutations) {
+  test(`development.v2 rejects ${name}`, () => {
+    const candidate = structuredClone(v2Fixture);
+    mutator(candidate);
+    const result = validateDevelopment(candidate);
+    assert.equal(result.ok, false);
+    assert.equal(result.errors.some(error => error.path === path), true);
+  });
+}
 
 function changed(mutator) {
   const candidate = structuredClone(fixture);
@@ -122,7 +165,7 @@ function assertWellFormedGeneratedXml(xml) {
 const invalidCases = [
   ["unknown top-level key", value => { value.extra = true; }, "extra"],
   ["unknown nested key", value => { value.sources[0].extra = true; }, "sources[0].extra"],
-  ["schema version", value => { value.schema_version = "development.v2"; }, "schema_version"],
+  ["schema version", value => { value.schema_version = "development.v9"; }, "schema_version"],
   ["identifier", value => { value.development_id = "../escape"; }, "development_id"],
   ["numeric development identifier", value => { value.development_id = 123; }, "development_id"],
   ["boolean development identifier", value => { value.development_id = true; }, "development_id"],
@@ -286,7 +329,7 @@ test("rendering accepts HTTPS and loopback site URLs only", () => {
   }
 });
 
-test("rendering projects one identity and three statuses to every format", () => {
+test("rendering projects one identity, mode and three statuses to every format", () => {
   const files = renderSite([fixture], {
     siteUrl: "https://publisher.example/project/",
     cssText: "body { color: #111; }\n",
@@ -326,6 +369,7 @@ test("rendering projects one identity and three statuses to every format", () =>
     "development_id",
     "url",
     "title",
+    "mode",
     "authority_status",
     "evidence_status",
     "publication_status",
@@ -346,6 +390,66 @@ test("rendering projects one identity and three statuses to every format", () =>
   assert.doesNotMatch(development, /<a[^>]+example\.invalid/i);
   assert.doesNotMatch(`${home}${development}${methodology}`, /<script\b/i);
   assert.doesNotMatch(`${home}${development}${methodology}`, /confidence/i);
+});
+
+test("rendering preserves synthetic mode in HTML, RSS and JSON Feed", () => {
+  const files = renderSite([fixture, v2Fixture], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  });
+  const home = files.get("index.html");
+  const development = files.get(
+    `developments/${v2Fixture.development_id}/index.html`,
+  );
+  const rss = files.get("feed.xml");
+  const feed = JSON.parse(files.get("feed.json"));
+
+  assert.match(home, /Demonstration/);
+  assert.match(development, /Synthetic/);
+  assert.match(development, /demonstration data/i);
+  assert.doesNotMatch(development, /<a[^>]+example\.invalid/i);
+  assert.match(rss, /Mode: synthetic/);
+  assert.equal(feed.schema_version, "feed.v2");
+  assert.equal(
+    feed.items.find(item => item.development_id === v2Fixture.development_id).mode,
+    "synthetic",
+  );
+  assert.equal(
+    feed.items.find(item => item.development_id === fixture.development_id).mode,
+    "synthetic",
+  );
+});
+
+test("rendering a valid live v2 record omits the demonstration warning", () => {
+  const liveBundle = structuredClone(parsedBundleFixture.bundle);
+  liveBundle.mode = "live";
+  liveBundle.sources[0].canonical_url =
+    "https://www.legislation.gov.au/C2099A00001/latest/text";
+  liveBundle.sources[0].rights.attribution =
+    "Federal Register of Legislation";
+  const accepted = parseEvidenceBundle(
+    Buffer.from(JSON.stringify(liveBundle), "utf8"),
+  );
+  const liveRecord = transformEvidenceBundle(accepted.bundle, {
+    bundleSha256: accepted.bundleSha256,
+  });
+  assert.deepEqual(validateDevelopment(liveRecord), {
+    ok: true,
+    value: liveRecord,
+  });
+
+  const files = renderSite([liveRecord], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  });
+  const development = files.get(
+    `developments/${liveRecord.development_id}/index.html`,
+  );
+  const feed = JSON.parse(files.get("feed.json"));
+  assert.match(development, /Live/);
+  assert.doesNotMatch(development, /demonstration data/i);
+  assert.match(files.get("feed.xml"), /Mode: live/);
+  assert.equal(feed.items[0].mode, "live");
 });
 
 test("rendering escapes a hostile record instead of creating markup", () => {

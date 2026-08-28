@@ -10,7 +10,7 @@ import {
   text,
   timestampKey,
   utcTimestamp,
-} from "./site.mjs";
+} from "./validation-primitives.mjs";
 import { parseStrictJsonBytes } from "./strict-json.mjs";
 
 const BUNDLE_KEYS = new Set([
@@ -75,6 +75,30 @@ const REVISION_KEYS = new Set([
   "updated_at",
   "change_note",
   "replaces_bundle_id",
+]);
+const CANONICAL_DEVELOPMENT_V2_KEYS = new Set([
+  "schema_version",
+  "development_id",
+  "mode",
+  "title",
+  "authority_status",
+  "evidence_status",
+  "publication_status",
+  "published_at",
+  "effective_at",
+  "topics",
+  "affected_practice_areas",
+  "source_event",
+  "sources",
+  "explainer",
+  "revision",
+  "upstream",
+]);
+const UPSTREAM_KEYS = new Set([
+  "bundle_id",
+  "bundle_sha256",
+  "generated_at",
+  "producer",
 ]);
 const MODES = new Set(["synthetic", "live"]);
 const AUTHORITY_STATUSES = new Set([
@@ -501,6 +525,84 @@ export function validateEvidenceBundle(input) {
     sources,
     updatedAt,
   });
+  return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
+}
+
+function canonicalErrorPath(path) {
+  if (path === "bundle_id" || path.startsWith("bundle_id.")) {
+    return `upstream.${path}`;
+  }
+  if (path === "generated_at" || path.startsWith("generated_at.")) {
+    return `upstream.${path}`;
+  }
+  if (path === "producer" || path.startsWith("producer.")) {
+    return `upstream.${path}`;
+  }
+  if (path === "development") return "$";
+  if (path.startsWith("development.")) return path.slice("development.".length);
+  return path;
+}
+
+function appendUniqueErrors(target, candidates) {
+  const seen = new Set(target.map(error => `${error.path}\u0000${error.message}`));
+  for (const error of candidates) {
+    const key = `${error.path}\u0000${error.message}`;
+    if (!seen.has(key)) {
+      target.push(error);
+      seen.add(key);
+    }
+  }
+}
+
+export function validateCanonicalDevelopmentV2(input) {
+  const errors = [];
+  if (!exactKeys(errors, input, "$", CANONICAL_DEVELOPMENT_V2_KEYS)) {
+    return { ok: false, errors };
+  }
+  if (input.schema_version !== "development.v2") {
+    addError(errors, "schema_version", "must equal development.v2");
+  }
+  if (input.explainer !== null) {
+    addError(errors, "explainer", "must be null");
+  }
+
+  const upstream = isRecord(input.upstream) ? input.upstream : {};
+  if (!exactKeys(errors, input.upstream, "upstream", UPSTREAM_KEYS)) {
+    // The projected bundle below adds field-specific errors without reading it.
+  }
+  sha256(errors, upstream.bundle_sha256, "upstream.bundle_sha256");
+
+  const projectedBundle = {
+    schema_version: "evidence-bundle.v1",
+    bundle_id: upstream.bundle_id,
+    development_id: input.development_id,
+    mode: input.mode,
+    generated_at: upstream.generated_at,
+    producer: upstream.producer,
+    development: {
+      title: input.title,
+      authority_status: input.authority_status,
+      evidence_status: input.evidence_status,
+      publication_status: input.publication_status,
+      published_at: input.published_at,
+      effective_at: input.effective_at,
+      topics: input.topics,
+      affected_practice_areas: input.affected_practice_areas,
+    },
+    source_event: input.source_event,
+    sources: input.sources,
+    revision: input.revision,
+  };
+  const projectedResult = validateEvidenceBundle(projectedBundle);
+  if (!projectedResult.ok) {
+    appendUniqueErrors(
+      errors,
+      projectedResult.errors.map(error => ({
+        path: canonicalErrorPath(error.path),
+        message: error.message,
+      })),
+    );
+  }
   return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
 }
 
