@@ -1,8 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import {
+  buildSite,
   renderSite,
   validateDevelopment,
 } from "../site.mjs";
@@ -270,5 +282,108 @@ test("rendering records each RSS item revision in Atom updated", () => {
       `<item>[\\s\\S]*?<guid isPermaLink="false">${record.development_id}<\\/guid>[\\s\\S]*?<\\/item>`,
     ))[0];
     assert.match(item, new RegExp(`<atom:updated>${record.revision.updated_at}<\\/atom:updated>`));
+  }
+});
+
+async function temporaryPublisher(t) {
+  const rootDir = await mkdtemp(join(tmpdir(), "tax-publisher-"));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+  const recordPath = join(
+    rootDir,
+    "content",
+    "developments",
+    fixture.development_id,
+    "development.json",
+  );
+  await mkdir(dirname(recordPath), { recursive: true });
+  await writeFile(recordPath, `${JSON.stringify(fixture, null, 2)}\n`);
+  await mkdir(join(rootDir, "assets"), { recursive: true });
+  await cp(new URL("../assets/site.css", import.meta.url), join(rootDir, "assets", "site.css"));
+  return { rootDir, recordPath, outputDir: join(rootDir, "out") };
+}
+
+async function readArtifact(outputDir, paths) {
+  return Object.fromEntries(await Promise.all(paths.map(async path => [
+    path,
+    await readFile(join(outputDir, ...path.split("/")), "utf8"),
+  ])));
+}
+
+test("build writes exactly the six static outputs", async t => {
+  const workspace = await temporaryPublisher(t);
+  const written = await buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/project/",
+  });
+  assert.deepEqual(written, [
+    "assets/site.css",
+    "developments/dev-demo-001/index.html",
+    "feed.json",
+    "feed.xml",
+    "index.html",
+    "methodology/index.html",
+  ]);
+  for (const path of written) {
+    assert.equal((await lstat(join(workspace.outputDir, ...path.split("/")))).isFile(), true);
+  }
+});
+
+test("build preserves the previous artifact when validation fails", async t => {
+  const workspace = await temporaryPublisher(t);
+  await mkdir(workspace.outputDir);
+  const sentinel = join(workspace.outputDir, "last-valid.txt");
+  await writeFile(sentinel, "keep");
+  const invalid = changed(value => { value.sources = []; });
+  await writeFile(workspace.recordPath, JSON.stringify(invalid));
+
+  await assert.rejects(() => buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  }), /sources/);
+  assert.equal(await readFile(sentinel, "utf8"), "keep");
+});
+
+test("build leaves sibling directories untouched", async t => {
+  const workspace = await temporaryPublisher(t);
+  const sibling = join(workspace.rootDir, "public");
+  await mkdir(sibling);
+  const marker = join(sibling, "keep.txt");
+  await writeFile(marker, "keep");
+  await buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  });
+  assert.equal(await readFile(marker, "utf8"), "keep");
+});
+
+test("build refuses a symbolic-link out directory", async t => {
+  const workspace = await temporaryPublisher(t);
+  const elsewhere = join(workspace.rootDir, "elsewhere");
+  await mkdir(elsewhere);
+  await symlink(elsewhere, workspace.outputDir, "junction");
+  await assert.rejects(() => buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  }), /symbolic link/);
+});
+
+test("build is deterministic and does not call fetch", { concurrency: false }, async t => {
+  const workspace = await temporaryPublisher(t);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => { throw new Error("external network attempted"); };
+  try {
+    const paths = await buildSite({
+      rootDir: workspace.rootDir,
+      siteUrl: "https://publisher.example/project/",
+    });
+    const first = await readArtifact(workspace.outputDir, paths);
+    await buildSite({
+      rootDir: workspace.rootDir,
+      siteUrl: "https://publisher.example/project/",
+    });
+    const second = await readArtifact(workspace.outputDir, paths);
+    assert.deepEqual(second, first);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
