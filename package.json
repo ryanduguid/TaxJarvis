@@ -9,8 +9,9 @@
   "scripts": {
     "dev": "node site.mjs && node serve.mjs",
     "build": "node site.mjs",
+    "import-bundle": "node import.mjs",
     "test": "node --test",
-    "check": "node --check strict-json.mjs && node --check validation-primitives.mjs && node --check evidence-bundle.mjs && node --check site.mjs && node --check serve.mjs && node --check test/strict-json.test.mjs && node --check test/evidence-bundle.test.mjs && node --check test/site.test.mjs && npm run build && npm test",
+    "check": "node --check strict-json.mjs && node --check validation-primitives.mjs && node --check evidence-bundle.mjs && node --check import.mjs && node --check site.mjs && node --check serve.mjs && node --check test/strict-json.test.mjs && node --check test/evidence-bundle.test.mjs && node --check test/import.test.mjs && node --check test/site.test.mjs && npm run build && npm test",
     "smoke": "node --test --test-name-pattern=smoke"
   }
 }
