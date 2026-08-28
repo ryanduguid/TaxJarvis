@@ -10,7 +10,7 @@
     "dev": "node site.mjs && node serve.mjs",
     "build": "node site.mjs",
     "test": "node --test",
-    "check": "node --check site.mjs && node --check serve.mjs && node --check test/site.test.mjs && npm run build && npm test",
+    "check": "node --check strict-json.mjs && node --check site.mjs && node --check serve.mjs && node --check test/strict-json.test.mjs && node --check test/site.test.mjs && npm run build && npm test",
     "smoke": "node --test --test-name-pattern=smoke"
   }
 }
