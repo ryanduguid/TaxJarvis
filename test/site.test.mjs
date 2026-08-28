@@ -6,6 +6,7 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rename,
   rm,
@@ -758,5 +759,52 @@ test("build does not report failure after cleanup cannot remove the old artifact
     await assert.rejects(() => lstat(blocker.lockPath), { code: "ENOENT" });
   } finally {
     await blocker.release();
+  }
+});
+
+test("repository policy: licences, documentation and static-only styling are explicit", async () => {
+  const rootUrl = new URL("../", import.meta.url);
+  const [rootEntries, packageJson, css, readme, contentLicence, licence] =
+    await Promise.all([
+      readdir(rootUrl),
+      readFile(new URL("package.json", rootUrl), "utf8").then(JSON.parse),
+      readFile(new URL("assets/site.css", rootUrl), "utf8"),
+      readFile(new URL("README.md", rootUrl), "utf8"),
+      readFile(new URL("CONTENT-LICENCE.md", rootUrl), "utf8"),
+      readFile(new URL("LICENSE", rootUrl), "utf8"),
+    ]);
+
+  assert.equal(Object.hasOwn(packageJson, "dependencies"), false);
+  assert.equal(Object.hasOwn(packageJson, "devDependencies"), false);
+  assert.equal(rootEntries.some(name => /^(package-lock|npm-shrinkwrap)\.json$/.test(name)), false);
+  assert.doesNotMatch(css, /@import|url\s*\(/i);
+  assert.doesNotMatch(css, /(?:animation|transition)\s*:/i);
+  assert.doesNotMatch(css, /border-radius\s*:/i);
+  assert.match(css, /:focus-visible/);
+  assert.match(readme, /non-production source-only demonstration/i);
+  assert.match(readme, /npm run check/);
+  assert.match(contentLicence, /CC BY 4\.0/);
+  assert.match(contentLicence, /CC0/);
+  assert.match(contentLicence, /Third-party source material/);
+  assert.match(contentLicence, /marks are reserved/i);
+  assert.match(licence, /GNU AFFERO GENERAL PUBLIC LICENSE/);
+  assert.match(licence, /Version 3, 19 November 2007/);
+});
+
+test("repository policy: generated pages contain no browser code or remote assets", async t => {
+  const workspace = await temporaryPublisher(t);
+  await buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  });
+  const pages = [
+    "index.html",
+    "developments/dev-demo-001/index.html",
+    "methodology/index.html",
+  ];
+  for (const page of pages) {
+    const html = await readFile(join(workspace.outputDir, ...page.split("/")), "utf8");
+    assert.doesNotMatch(html, /<script\b|<img\b|javascript:|https:\/\/fonts\./i);
+    assert.doesNotMatch(html, /[\u2013\u2014]/);
   }
 });
