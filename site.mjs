@@ -1,4 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
 const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{2,79}$/;
 const UTC_TIMESTAMP =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
@@ -99,6 +110,57 @@ export function validateDevelopment(input) {
   }
   if (input.fixture !== true) addError(errors, "fixture", "must be true");
   return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
+}
+
+async function loadDevelopments({ contentDir }) {
+  const entries = (await readdir(contentDir, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory())
+    .sort((left, right) => left.name.localeCompare(right.name));
+  if (entries.length === 0) {
+    throw new Error("No development records were found");
+  }
+
+  const records = [];
+  const identifiers = new Set();
+  for (const entry of entries) {
+    const recordPath = join(contentDir, entry.name, "development.json");
+    const recordLabel = JSON.stringify(`${entry.name}/development.json`);
+    let input;
+    try {
+      input = JSON.parse(await readFile(recordPath, "utf8"));
+    } catch {
+      throw new Error(`${recordLabel} is not valid JSON`);
+    }
+    const result = validateDevelopment(input);
+    if (!result.ok) {
+      const summary = result.errors
+        .map(error => `${error.path}: ${error.message}`)
+        .join("\n");
+      throw new Error(`${recordLabel} failed validation\n${summary}`);
+    }
+    if (result.value.development_id !== entry.name) {
+      throw new Error(`${recordLabel} identifier must match its directory`);
+    }
+    if (identifiers.has(result.value.development_id)) {
+      throw new Error(`${recordLabel} identifier must be unique`);
+    }
+    identifiers.add(result.value.development_id);
+    records.push(result.value);
+  }
+  return records;
+}
+
+async function outputDirectory(rootDir) {
+  const expected = join(resolve(rootDir), "out");
+  try {
+    const information = await lstat(expected);
+    if (information.isSymbolicLink()) {
+      throw new Error("The out directory must not be a symbolic link");
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  return expected;
 }
 
 function escapeHtml(value) {
@@ -381,4 +443,39 @@ export function renderSite(records, { siteUrl, cssText }) {
     );
   }
   return files;
+}
+
+export async function buildSite({ rootDir, siteUrl }) {
+  const resolvedRoot = resolve(rootDir);
+  const outputDir = await outputDirectory(resolvedRoot);
+  const records = await loadDevelopments({
+    contentDir: join(resolvedRoot, "content", "developments"),
+  });
+  const cssText = await readFile(join(resolvedRoot, "assets", "site.css"), "utf8");
+  const rendered = renderSite(records, { siteUrl, cssText });
+
+  await rm(outputDir, { recursive: true, force: true });
+  for (const [relativePath, contents] of rendered) {
+    const destination = join(outputDir, ...relativePath.split("/"));
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, contents, "utf8");
+  }
+  return [...rendered.keys()].sort();
+}
+
+const REPOSITORY_ROOT = fileURLToPath(new URL(".", import.meta.url));
+const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : "";
+
+if (invokedPath === import.meta.url) {
+  const siteUrl = process.env.SITE_URL ?? "http://127.0.0.1:4173/";
+  buildSite({
+    rootDir: REPOSITORY_ROOT,
+    siteUrl,
+  }).then(
+    paths => console.log(`Built ${paths.length} files in out/`),
+    error => {
+      console.error(error.message);
+      process.exitCode = 1;
+    },
+  );
 }
