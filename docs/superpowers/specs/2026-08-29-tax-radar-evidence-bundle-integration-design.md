@@ -130,7 +130,10 @@ repair, enrich or reinterpret a malformed bundle.
 
 The upstream contract adds `au-tax-register-observation-facts.v3` and its
 projected `au-tax-register-observation.v3` form. Existing v1 and v2 behaviour
-remains valid and unchanged.
+remains valid and unchanged. The existing Tax Radar comparison command accepts
+and validates v3 observations while retaining its current impact-queue schema;
+the additional content-evidence fields affect the observation snapshot digest
+but are not presented as a technical-impact conclusion.
 
 V3 retains the v2 scope and `evidence_id` fields and adds, for every observation:
 
@@ -151,7 +154,7 @@ The upstream adds a standard-library command shaped as:
 
 ```text
 python -m fadden export_publication_bundles -- \
-  <sources.json> <observation-facts-v3.json> --out <new-empty-directory>
+  sources.json observation-facts-v3.json --out new-publication-bundles
 ```
 
 The exact command spelling may follow the existing `fadden` dispatcher, but it
@@ -163,13 +166,15 @@ must remain non-interactive and take explicit paths. The exporter:
 3. reuses the existing baseline and observation projection rules;
 4. requires complete v3 scope and supported state-specific fields;
 5. calculates deterministic source-digest provenance from the captured bytes;
-6. creates every output in a new, otherwise empty directory; and
+6. requires the destination path not to exist and creates every output in one
+   new directory; and
 7. leaves no output directory behind if any candidate fails.
 
 The output directory is immutable for that run. The exporter refuses links,
-junctions, special files, an existing non-empty destination or an input path that
-aliases the output. This avoids an overwrite and recovery protocol in the first
-slice.
+junctions, special files, any existing destination or an input path that aliases
+the output. It stages a sibling directory and promotes it by one rename. This
+avoids deleting a caller-created directory or adding an overwrite and recovery
+protocol in the first slice.
 
 ## 6. `evidence-bundle.v1`
 
