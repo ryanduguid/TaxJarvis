@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -339,7 +340,7 @@ test("build preserves the previous artifact when validation fails", async t => {
   await assert.rejects(() => buildSite({
     rootDir: workspace.rootDir,
     siteUrl: "https://publisher.example/",
-  }), /sources/);
+  }), { message: "A development record failed validation" });
   assert.equal(await readFile(sentinel, "utf8"), "keep");
 });
 
@@ -386,4 +387,114 @@ test("build is deterministic and does not call fetch", { concurrency: false }, a
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("build reports missing development content without disclosing its path", async t => {
+  const rootDir = await mkdtemp(join(tmpdir(), "tax-publisher-private-content-"));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  await assert.rejects(() => buildSite({
+    rootDir,
+    siteUrl: "https://publisher.example/",
+  }), error => {
+    assert.equal(error.message, "Development content directory is missing");
+    assert.equal(error.message.includes(rootDir), false);
+    return true;
+  });
+});
+
+test("build reports a missing record file without disclosing its directory", async t => {
+  const workspace = await temporaryPublisher(t);
+  const marker = "private-directory-name-must-not-appear";
+  await rename(
+    dirname(workspace.recordPath),
+    join(workspace.rootDir, "content", "developments", marker),
+  );
+  await rm(join(workspace.rootDir, "content", "developments", marker, "development.json"));
+
+  await assert.rejects(() => buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  }), error => {
+    assert.equal(error.message, "A development record file is missing");
+    assert.equal(error.message.includes(marker), false);
+    assert.equal(error.message.includes(workspace.rootDir), false);
+    return true;
+  });
+});
+
+test("build distinguishes malformed development JSON", async t => {
+  const workspace = await temporaryPublisher(t);
+  await writeFile(workspace.recordPath, "{");
+
+  await assert.rejects(() => buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  }), { message: "A development record is not valid JSON" });
+});
+
+test("build rejects a development identifier that differs from its directory", async t => {
+  const workspace = await temporaryPublisher(t);
+  const mismatch = changed(value => { value.development_id = "dev-other"; });
+  await writeFile(workspace.recordPath, JSON.stringify(mismatch));
+
+  await assert.rejects(() => buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  }), { message: "A development record identifier does not match its directory" });
+});
+
+test("build detects duplicated development identifiers before directory mismatch", async t => {
+  const workspace = await temporaryPublisher(t);
+  const duplicatePath = join(
+    workspace.rootDir,
+    "content",
+    "developments",
+    "dev-demo-002",
+    "development.json",
+  );
+  await mkdir(dirname(duplicatePath), { recursive: true });
+  await writeFile(duplicatePath, JSON.stringify(fixture));
+
+  await assert.rejects(() => buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  }), { message: "A development record identifier is duplicated" });
+});
+
+test("build reports validation failures without disclosing an unknown key", async t => {
+  const workspace = await temporaryPublisher(t);
+  const marker = "private-unknown-key-must-not-appear";
+  const invalid = changed(value => { value[marker] = true; });
+  await writeFile(workspace.recordPath, JSON.stringify(invalid));
+
+  await assert.rejects(() => buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  }), error => {
+    assert.equal(error.message, "A development record failed validation");
+    assert.equal(error.message.includes(marker), false);
+    return true;
+  });
+});
+
+test("build preserves the previous artifact when staged publication fails", async t => {
+  const workspace = await temporaryPublisher(t);
+  const paths = await buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  });
+  const before = await readArtifact(workspace.outputDir, paths);
+  const backupPath = join(workspace.rootDir, ".out-previous");
+  await writeFile(backupPath, "reserved");
+
+  await assert.rejects(() => buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  }), { message: "A private build directory is already present" });
+  assert.deepEqual(await readArtifact(workspace.outputDir, paths), before);
+  assert.equal(await readFile(backupPath, "utf8"), "reserved");
+  await assert.rejects(() => lstat(join(workspace.rootDir, ".out-staging")), {
+    code: "ENOENT",
+  });
 });

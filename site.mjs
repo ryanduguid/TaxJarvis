@@ -4,6 +4,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -113,7 +114,16 @@ export function validateDevelopment(input) {
 }
 
 async function loadDevelopments({ contentDir }) {
-  const entries = (await readdir(contentDir, { withFileTypes: true }))
+  let contentEntries;
+  try {
+    contentEntries = await readdir(contentDir, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error("Development content directory is missing");
+    }
+    throw new Error("Development content directory cannot be read");
+  }
+  const entries = contentEntries
     .filter(entry => entry.isDirectory())
     .sort((left, right) => left.name.localeCompare(right.name));
   if (entries.length === 0) {
@@ -124,25 +134,30 @@ async function loadDevelopments({ contentDir }) {
   const identifiers = new Set();
   for (const entry of entries) {
     const recordPath = join(contentDir, entry.name, "development.json");
-    const recordLabel = JSON.stringify(`${entry.name}/development.json`);
+    let source;
+    try {
+      source = await readFile(recordPath, "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        throw new Error("A development record file is missing");
+      }
+      throw new Error("A development record file cannot be read");
+    }
     let input;
     try {
-      input = JSON.parse(await readFile(recordPath, "utf8"));
+      input = JSON.parse(source);
     } catch {
-      throw new Error(`${recordLabel} is not valid JSON`);
+      throw new Error("A development record is not valid JSON");
     }
     const result = validateDevelopment(input);
     if (!result.ok) {
-      const summary = result.errors
-        .map(error => `${error.path}: ${error.message}`)
-        .join("\n");
-      throw new Error(`${recordLabel} failed validation\n${summary}`);
-    }
-    if (result.value.development_id !== entry.name) {
-      throw new Error(`${recordLabel} identifier must match its directory`);
+      throw new Error("A development record failed validation");
     }
     if (identifiers.has(result.value.development_id)) {
-      throw new Error(`${recordLabel} identifier must be unique`);
+      throw new Error("A development record identifier is duplicated");
+    }
+    if (result.value.development_id !== entry.name) {
+      throw new Error("A development record identifier does not match its directory");
     }
     identifiers.add(result.value.development_id);
     records.push(result.value);
@@ -152,15 +167,93 @@ async function loadDevelopments({ contentDir }) {
 
 async function outputDirectory(rootDir) {
   const expected = join(resolve(rootDir), "out");
+  await outputExists(expected);
+  return expected;
+}
+
+async function outputExists(outputDir) {
+  let information;
   try {
-    const information = await lstat(expected);
-    if (information.isSymbolicLink()) {
-      throw new Error("The out directory must not be a symbolic link");
+    information = await lstat(outputDir);
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw new Error("The out directory cannot be inspected");
+  }
+  if (information.isSymbolicLink()) {
+    throw new Error("The out directory must not be a symbolic link");
+  }
+  return true;
+}
+
+async function createPrivateDirectory(rootDir, name) {
+  const directory = join(rootDir, name);
+  try {
+    await mkdir(directory);
+  } catch (error) {
+    if (error.code === "EEXIST") {
+      throw new Error("A private build directory is already present");
+    }
+    throw new Error("Unable to prepare private build output");
+  }
+  return directory;
+}
+
+async function removePrivateDirectory(directory) {
+  try {
+    await rm(directory, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function writeStagedOutput(stagingDir, rendered) {
+  try {
+    for (const [relativePath, contents] of rendered) {
+      const destination = join(stagingDir, ...relativePath.split("/"));
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, contents, "utf8");
+    }
+  } catch {
+    throw new Error("Unable to write staged output");
+  }
+}
+
+async function publishStagedOutput({ rootDir, outputDir, stagingDir }) {
+  const backupDir = await createPrivateDirectory(rootDir, ".out-previous");
+  const backupOutput = join(backupDir, "out");
+  let previousOutputMoved = false;
+  try {
+    if (await outputExists(outputDir)) {
+      try {
+        await rename(outputDir, backupOutput);
+        previousOutputMoved = true;
+      } catch {
+        throw new Error("Unable to publish staged output");
+      }
+    }
+    try {
+      await rename(stagingDir, outputDir);
+    } catch {
+      if (previousOutputMoved) {
+        try {
+          await rename(backupOutput, outputDir);
+          previousOutputMoved = false;
+        } catch {
+          throw new Error("Staged output could not be published and the previous artifact could not be restored");
+        }
+      }
+      throw new Error("Unable to publish staged output");
+    }
+    if (!await removePrivateDirectory(backupDir)) {
+      throw new Error("Unable to clean private build output");
     }
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (!previousOutputMoved && !await removePrivateDirectory(backupDir)) {
+      throw new Error("Unable to clean private build output");
+    }
+    throw error;
   }
-  return expected;
 }
 
 function escapeHtml(value) {
@@ -451,14 +544,26 @@ export async function buildSite({ rootDir, siteUrl }) {
   const records = await loadDevelopments({
     contentDir: join(resolvedRoot, "content", "developments"),
   });
-  const cssText = await readFile(join(resolvedRoot, "assets", "site.css"), "utf8");
+  let cssText;
+  try {
+    cssText = await readFile(join(resolvedRoot, "assets", "site.css"), "utf8");
+  } catch {
+    throw new Error("Stylesheet cannot be read");
+  }
   const rendered = renderSite(records, { siteUrl, cssText });
-
-  await rm(outputDir, { recursive: true, force: true });
-  for (const [relativePath, contents] of rendered) {
-    const destination = join(outputDir, ...relativePath.split("/"));
-    await mkdir(dirname(destination), { recursive: true });
-    await writeFile(destination, contents, "utf8");
+  const stagingDir = await createPrivateDirectory(resolvedRoot, ".out-staging");
+  try {
+    await writeStagedOutput(stagingDir, rendered);
+    await publishStagedOutput({
+      rootDir: resolvedRoot,
+      outputDir,
+      stagingDir,
+    });
+  } catch (error) {
+    if (!await removePrivateDirectory(stagingDir)) {
+      throw new Error("Unable to clean private build output");
+    }
+    throw error;
   }
   return [...rendered.keys()].sort();
 }
