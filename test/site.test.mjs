@@ -808,3 +808,29 @@ test("repository policy: generated pages contain no browser code or remote asset
     assert.doesNotMatch(html, /[\u2013\u2014]/);
   }
 });
+
+test("workflow policy: one pinned workflow validates before main deployment", async () => {
+  const workflowDirectory = new URL("../.github/workflows/", import.meta.url);
+  assert.deepEqual(await readdir(workflowDirectory), ["pages.yml"]);
+  const workflow = await readFile(new URL("pages.yml", workflowDirectory), "utf8");
+
+  for (const sha of [
+    "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+    "a0853c24544627f65ddf259abe73b1d18a591444",
+    "983d7736d9b0ae728b81ab479565c72886d7745b",
+    "7b1f4a764d45c48632c6b24a0339c27f5614fb0b",
+    "cd2ce8fcbc39b97be8ca5fce6e763baed58fa128",
+  ]) {
+    assert.match(workflow, new RegExp(`uses: [^\\n]+@${sha}`));
+  }
+  assert.match(workflow, /pull_request:/);
+  assert.match(workflow, /branches:\s*\n\s+- main/);
+  assert.match(workflow, /npm run check/);
+  assert.match(workflow, /npm run smoke/);
+  assert.match(workflow, /SITE_URL: \$\{\{ steps\.pages\.outputs\.base_url \}\}/);
+  assert.match(workflow, /pages: write/);
+  assert.match(workflow, /id-token: write/);
+  assert.match(workflow, /needs: validate/);
+  assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
+  assert.doesNotMatch(workflow, /npm (?:ci|install)|continue-on-error/);
+});
