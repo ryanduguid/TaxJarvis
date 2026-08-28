@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/ryanduguid/au-tax-legislation-corpus",
+  "commit": "33c79f20c08d7e0c79c7038c54ea20f0c7bd6443",
+  "path": "tests/corpus/fixtures/publication/evidence-bundle.v1.json",
+  "sha256": "sha256:04c032d9f5cbe9414739beff7452cffd0b5b6482c7554769663e7698df98c15c"
+}
