@@ -21,15 +21,15 @@ const SOURCE_KEYS = new Set(["source_id", "publisher", "document_class", "title"
 const RIGHTS_KEYS = new Set(["mode", "attribution", "licence_url"]);
 const REVISION_KEYS = new Set(["number", "updated_at", "change_note"]);
 
-function isRecord(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
-function isIdentifier(value) { return typeof value === "string" && IDENTIFIER.test(value); }
+export function isRecord(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
+export function isIdentifier(value) { return typeof value === "string" && IDENTIFIER.test(value); }
 function addError(errors, path, message) { errors.push({ path, message }); }
-function exactKeys(errors, value, path, allowed) {
+export function exactKeys(errors, value, path, allowed) {
   if (!isRecord(value)) { addError(errors, path, "must be an object"); return false; }
   for (const key of Object.keys(value)) if (!allowed.has(key)) addError(errors, path === "$" ? key : `${path}.${key}`, "is not allowed");
   return true;
 }
-function isXmlText(value) {
+export function isXmlText(value) {
   for (const character of value) {
     const codePoint = character.codePointAt(0);
     if (
@@ -43,20 +43,20 @@ function isXmlText(value) {
   }
   return true;
 }
-function text(errors, value, path, maximum) {
+export function text(errors, value, path, maximum) {
   if (typeof value !== "string" || value.length === 0 || value.trim() !== value || value.length > maximum || !isXmlText(value)) {
     addError(errors, path, `must be trimmed text of 1 to ${maximum} characters`); return false;
   }
   return true;
 }
-function oneOf(errors, value, path, allowed) { if (!allowed.has(value)) { addError(errors, path, "has an unsupported value"); return false; } return true; }
-function timestampKey(value) {
+export function oneOf(errors, value, path, allowed) { if (!allowed.has(value)) { addError(errors, path, "has an unsupported value"); return false; } return true; }
+export function timestampKey(value) {
   if (typeof value !== "string") return null;
   const match = UTC_TIMESTAMP.exec(value);
   if (match === null) return null;
   return `${value.slice(0, 19)}.${(match[7] ?? "").padEnd(9, "0")}Z`;
 }
-function utcTimestamp(errors, value, path, { nullable = false } = {}) {
+export function utcTimestamp(errors, value, path, { nullable = false } = {}) {
   if (nullable && value === null) return null;
   if (typeof value !== "string") { addError(errors, path, "must be an RFC 3339 UTC timestamp"); return null; }
   const match = UTC_TIMESTAMP.exec(value); const key = timestampKey(value); const milliseconds = Date.parse(value);
@@ -66,11 +66,11 @@ function utcTimestamp(errors, value, path, { nullable = false } = {}) {
   if (parts.some((part, index) => part !== actual[index])) { addError(errors, path, "must identify a real UTC date and time"); return null; }
   return key;
 }
-function isArtificialHostname(hostname) {
+export function isArtificialHostname(hostname) {
   const normalised = hostname.toLowerCase().replace(/\.+$/, "");
   return normalised === "invalid" || normalised.endsWith(".invalid");
 }
-function httpsUrl(errors, value, path, { nullable = false, allowInvalidHost = false } = {}) {
+export function httpsUrl(errors, value, path, { nullable = false, allowInvalidHost = false } = {}) {
   if (nullable && value === null) return null;
   if (typeof value !== "string" || value.length > 2048) { addError(errors, path, "must be an HTTPS URL of at most 2048 characters"); return null; }
   try {
@@ -79,7 +79,7 @@ function httpsUrl(errors, value, path, { nullable = false, allowInvalidHost = fa
     return parsed;
   } catch { addError(errors, path, "must be a permitted HTTPS URL"); return null; }
 }
-function labelList(errors, value, path) {
+export function labelList(errors, value, path) {
   if (!Array.isArray(value) || value.length > 20) { addError(errors, path, "must be an array of at most 20 labels"); return; }
   const seen = new Set();
   for (let index = 0; index < value.length; index += 1) {
