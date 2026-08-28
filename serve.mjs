@@ -73,19 +73,32 @@ function resolveRequestPath(rootDir, requestUrl) {
 
 function sendFixedResponse(outgoing, statusCode, method) {
   const body = ERROR_RESPONSES.get(statusCode) ?? "Internal server error\n";
-  outgoing.writeHead(statusCode, {
+  const headers = {
     "Content-Type": "text/plain; charset=utf-8",
     "Content-Length": Buffer.byteLength(body),
     "X-Content-Type-Options": "nosniff",
     ...(statusCode === 405 ? { Allow: "GET, HEAD" } : {}),
-  });
+  };
+  outgoing.writeHead(statusCode, headers);
   outgoing.end(method === "HEAD" ? undefined : body);
+}
+
+function sendConnectResponse(socket) {
+  const body = ERROR_RESPONSES.get(405);
+  socket.end([
+    "HTTP/1.1 405 Method Not Allowed",
+    "Content-Type: text/plain; charset=utf-8",
+    `Content-Length: ${Buffer.byteLength(body)}`,
+    "X-Content-Type-Options: nosniff",
+    "Allow: GET, HEAD",
+    "",
+    body,
+  ].join("\r\n"));
 }
 
 function createStaticServer({ rootDir }) {
   const rootPath = resolve(rootDir);
-  const realRootPromise = realpath(rootPath);
-  return createServer((incoming, outgoing) => {
+  const server = createServer((incoming, outgoing) => {
     void (async () => {
       if (!ALLOWED_METHODS.has(incoming.method)) {
         sendFixedResponse(outgoing, 405, incoming.method);
@@ -94,11 +107,8 @@ function createStaticServer({ rootDir }) {
 
       try {
         const { candidate, isPublicRoute } = resolveRequestPath(rootPath, incoming.url);
-        const [realRoot, realCandidate] = await Promise.all([
-          realRootPromise,
-          realpath(candidate),
-        ]);
-        if (!isContained(realRoot, realCandidate)) throw new HttpPathError(403);
+        const realCandidate = await realpath(candidate);
+        if (!isContained(rootPath, realCandidate)) throw new HttpPathError(403);
 
         const information = await stat(realCandidate);
         if (!isPublicRoute || !information.isFile()) throw new HttpPathError(404);
@@ -116,6 +126,8 @@ function createStaticServer({ rootDir }) {
       }
     })();
   });
+  server.on("connect", (_incoming, socket) => sendConnectResponse(socket));
+  return server;
 }
 
 export async function startServer({
@@ -123,7 +135,8 @@ export async function startServer({
   hostname = "127.0.0.1",
   port = 4173,
 }) {
-  const server = createStaticServer({ rootDir });
+  const canonicalRoot = await realpath(resolve(rootDir));
+  const server = createStaticServer({ rootDir: canonicalRoot });
   await new Promise((resolveListening, reject) => {
     server.once("error", reject);
     server.listen(port, hostname, resolveListening);
