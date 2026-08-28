@@ -23,14 +23,17 @@ It contains one artificial fixture. It does not monitor sources, publish live pr
 
 `content/developments/dev-demo-001/development.json` is the only checked-in
 editorial record. HTML, RSS and JSON are generated projections. Invalid input
-stops the build before the current artifact is replaced.
+stops the build before the current artifact is replaced. Canonical record files
+also use strict UTF-8 and duplicate-member rejection during every build.
 
 The importer accepts one ordinary `evidence-bundle.v1` file of at most 1 MiB
 and an explicit ordinary content root. It parses UTF-8 and JSON strictly,
 rejects unknown fields and duplicate members, validates source identity,
 chronology, rights and evidence, and calculates `upstream.bundle_sha256` from
-the exact bytes received. It performs no network request and does not enrich
-the source record.
+the exact bytes received. This Federal Register event is admitted only as
+verified and in force; live mode requires the exact official Register URL and
+attribution. The importer performs no network request and does not enrich the
+source record.
 
 The normal command rejects `mode: synthetic`; there is no command-line bypass.
 The synthetic override exists only on the reusable function so the conformance

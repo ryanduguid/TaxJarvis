@@ -101,22 +101,6 @@ const UPSTREAM_KEYS = new Set([
   "producer",
 ]);
 const MODES = new Set(["synthetic", "live"]);
-const AUTHORITY_STATUSES = new Set([
-  "consultation",
-  "introduced",
-  "made-not-effective",
-  "in-force",
-  "operative-guidance",
-  "decision",
-  "withdrawn",
-  "superseded",
-]);
-const EVIDENCE_STATUSES = new Set([
-  "verified",
-  "insufficient",
-  "conflicting",
-  "stale",
-]);
 const COLLECTIONS = new Set([
   "Act",
   "LegislativeInstrument",
@@ -209,18 +193,20 @@ function validateDevelopmentSection(errors, development) {
     return { publishedAt: null };
   }
   text(errors, development.title, "development.title", 200);
-  oneOf(
-    errors,
-    development.authority_status,
-    "development.authority_status",
-    AUTHORITY_STATUSES,
-  );
-  oneOf(
-    errors,
-    development.evidence_status,
-    "development.evidence_status",
-    EVIDENCE_STATUSES,
-  );
+  if (development.authority_status !== "in-force") {
+    addError(
+      errors,
+      "development.authority_status",
+      "must equal in-force for a current compilation event",
+    );
+  }
+  if (development.evidence_status !== "verified") {
+    addError(
+      errors,
+      "development.evidence_status",
+      "must equal verified for publication admission",
+    );
+  }
   if (development.publication_status !== "source-only") {
     addError(errors, "development.publication_status", "must equal source-only");
   }
@@ -485,6 +471,27 @@ function crossValidate(
       if (canonicalUrl.pathname !== expectedPath) {
         addError(errors, `${path}.canonical_url`, "does not match the register title");
       }
+      if (
+        bundle.mode === "live" &&
+        source.canonical_url !==
+          `https://www.legislation.gov.au${expectedPath}`
+      ) {
+        addError(
+          errors,
+          `${path}.canonical_url`,
+          "must be the exact official Federal Register URL in live mode",
+        );
+      }
+    }
+    if (
+      bundle.mode === "live" &&
+      source.rights?.attribution !== "Federal Register of Legislation"
+    ) {
+      addError(
+        errors,
+        `${path}.rights.attribution`,
+        "must identify the Federal Register of Legislation in live mode",
+      );
     }
   }
 

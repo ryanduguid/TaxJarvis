@@ -445,9 +445,12 @@ test("rendering a valid live v2 record omits the demonstration warning", () => {
   const development = files.get(
     `developments/${liveRecord.development_id}/index.html`,
   );
+  const methodology = files.get("methodology/index.html");
   const feed = JSON.parse(files.get("feed.json"));
   assert.match(development, /Live/);
   assert.doesNotMatch(development, /demonstration data/i);
+  assert.match(methodology, /live source records/i);
+  assert.doesNotMatch(methodology, /one clearly labelled, non-production source fixture/i);
   assert.match(files.get("feed.xml"), /Mode: live/);
   assert.equal(feed.items[0].mode, "live");
 });
@@ -863,6 +866,24 @@ test("build preserves the previous artifact when validation fails", async t => {
     rootDir: workspace.rootDir,
     siteUrl: "https://publisher.example/",
   }), { message: "A development record failed validation" });
+  assert.equal(await readFile(sentinel, "utf8"), "keep");
+});
+
+test("build rejects duplicate canonical JSON members before replacing output", async t => {
+  const workspace = await temporaryPublisher(t);
+  await mkdir(workspace.outputDir);
+  const sentinel = join(workspace.outputDir, "last-valid.txt");
+  await writeFile(sentinel, "keep");
+  const duplicate = JSON.stringify(fixture).replace(
+    "{",
+    '{"schema_version":"development.v9",',
+  );
+  await writeFile(workspace.recordPath, duplicate);
+
+  await assert.rejects(() => buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "https://publisher.example/",
+  }), { message: "A development record is not valid JSON" });
   assert.equal(await readFile(sentinel, "utf8"), "keep");
 });
 

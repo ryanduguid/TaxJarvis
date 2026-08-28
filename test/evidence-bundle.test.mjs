@@ -103,6 +103,45 @@ test("bundle validation rejects live mode with an artificial source host", () =>
   assertInvalid(value => { value.mode = "live"; }, "sources[0].canonical_url");
 });
 
+test("bundle validation requires the verified in-force state for this source event", () => {
+  for (const evidenceStatus of ["insufficient", "conflicting", "stale"]) {
+    assertInvalid(
+      value => { value.development.evidence_status = evidenceStatus; },
+      "development.evidence_status",
+    );
+  }
+  for (const authorityStatus of ["consultation", "withdrawn", "superseded"]) {
+    assertInvalid(
+      value => { value.development.authority_status = authorityStatus; },
+      "development.authority_status",
+    );
+  }
+});
+
+test("live Federal Register bundles require the exact official source and attribution", () => {
+  for (const canonicalUrl of [
+    "https://other.example/C2099A00001/latest/text",
+    "https://www.legislation.gov.au/C2099A00001/latest/text?unreviewed=1",
+  ]) {
+    assertInvalid(
+      value => {
+        value.mode = "live";
+        value.sources[0].canonical_url = canonicalUrl;
+        value.sources[0].rights.attribution = "Federal Register of Legislation";
+      },
+      "sources[0].canonical_url",
+    );
+  }
+  assertInvalid(
+    value => {
+      value.mode = "live";
+      value.sources[0].canonical_url =
+        "https://www.legislation.gov.au/C2099A00001/latest/text";
+    },
+    "sources[0].rights.attribution",
+  );
+});
+
 test("bundle validation rejects timestamp ordering conflicts", () => {
   assertInvalid(
     value => { value.sources[0].retrieved_at = "2026-08-04T00:00:00Z"; },

@@ -159,6 +159,35 @@ test("existing linked target is rejected without touching its target", async t =
   assert.equal(await readFile(marker, "utf8"), "keep");
 });
 
+test("idempotency rejects a linked canonical record", async t => {
+  const { root, contentRoot } = await temporaryContentRoot(t);
+  const imported = await importEvidenceBundle({
+    bundlePath: GOLDEN,
+    contentRoot,
+    allowSynthetic: true,
+  });
+  const canonicalBytes = await readFile(imported.developmentPath);
+  const externalRecord = join(root, "external-development.json");
+  await writeFile(externalRecord, canonicalBytes);
+  await rm(imported.developmentPath);
+  try {
+    await symlink(externalRecord, imported.developmentPath, "file");
+  } catch (error) {
+    t.skip(`file links are unavailable: ${error.message}`);
+    return;
+  }
+
+  await assert.rejects(
+    importEvidenceBundle({
+      bundlePath: GOLDEN,
+      contentRoot,
+      allowSynthetic: true,
+    }),
+    /existing development conflicts with the evidence bundle/,
+  );
+  assert.deepEqual(await readFile(externalRecord), canonicalBytes);
+});
+
 for (const operation of ["writeFile", "rename"]) {
   test(`${operation} failure leaves no target or staging directory`, async t => {
     const { contentRoot } = await temporaryContentRoot(t);
