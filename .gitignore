@@ -1,4 +1,5 @@
 out/
+/content/.live-import-*/
 node_modules/
 *.log
 .DS_Store
