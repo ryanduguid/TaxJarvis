@@ -1,4 +1,4 @@
-# Australian Tax Intelligence
+# TaxJarvis
 
 This repository is a non-production source-only demonstration for a future public service covering Australian tax and accounting developments for practising accountants and tax agents.
 
