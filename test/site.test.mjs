@@ -1287,6 +1287,10 @@ function assertWorkflowPolicy(workflow) {
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /needs: validate/);
   assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
+  assert.equal(
+    (workflow.match(/^\s*package-manager-cache:\s*false\s*$/gm) ?? []).length,
+    2,
+  );
   assert.doesNotMatch(workflow, /^\s*cache\s*:/mi);
   assert.doesNotMatch(workflow, /\bnpm\s+(?:ci|install)\b/i);
   assert.doesNotMatch(workflow, /^\s*continue-on-error\s*:/mi);
@@ -1314,7 +1318,9 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     "uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
     "uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
     "uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
+    "package-manager-cache: false",
     "uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
+    "package-manager-cache: false",
     "uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b",
     "uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b",
     "uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128",
@@ -1328,6 +1334,7 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     ),
     `${approvedWorkflow}\n- uses: actions/cache@v4`,
     `${approvedWorkflow}\ncache: npm`,
+    approvedWorkflow.replace("package-manager-cache: false", "package-manager-cache: true"),
     `${approvedWorkflow}\nrun: npm   install`,
     `${approvedWorkflow}\ncontinue-on-error: true`,
   ]) {
