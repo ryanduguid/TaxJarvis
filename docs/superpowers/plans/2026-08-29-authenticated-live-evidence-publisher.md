@@ -8,7 +8,7 @@
 
 **Tech Stack:** Windows-only production admission, Node.js 24.19.0+, npm 11.17.0+, standard library only, Node test runner and GitHub CLI 2.98.0+.
 
-**Spec:** Producer repository commit `777e2b596ab6563d2bc874d3262951f6fa9fd65f`, file `docs/superpowers/specs/2026-08-29-authenticated-live-evidence-admission-design.md`.
+**Spec:** Producer repository commit `1d651c3af11135f037f2c573f98d73d78b83f2da`, file `docs/superpowers/specs/2026-08-29-authenticated-live-evidence-admission-design.md`.
 
 ## Global Constraints
 
