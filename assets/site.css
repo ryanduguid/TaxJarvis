@@ -116,6 +116,7 @@ dt {
 article,
 .notice {
   max-width: 52rem;
+  overflow-wrap: anywhere;
 }
 
 .development-card {

@@ -34,10 +34,7 @@ const OPERATION_NAMES = new Set([
   "rm",
   "writeFile",
 ]);
-const CLI_USAGE =
-  "Usage: node import.mjs --bundle <file> --content-root <directory>";
-
-export const DEFAULT_OPERATIONS = Object.freeze({
+const DEFAULT_OPERATIONS = Object.freeze({
   lstat,
   mkdir,
   readFile,
@@ -46,7 +43,7 @@ export const DEFAULT_OPERATIONS = Object.freeze({
   writeFile,
 });
 
-export class EvidenceImportError extends Error {
+class EvidenceImportError extends Error {
   constructor(message) {
     super(message);
     this.name = "EvidenceImportError";
@@ -275,61 +272,12 @@ export async function importEvidenceBundle({
   }
 }
 
-class CliUsageError extends Error {}
-
-function parseCliArguments(argv) {
-  const values = new Map();
-  const allowed = new Set(["--bundle", "--content-root"]);
-  for (let index = 0; index < argv.length; index += 2) {
-    const option = argv[index];
-    const value = argv[index + 1];
-    if (
-      !allowed.has(option) ||
-      values.has(option) ||
-      typeof value !== "string" ||
-      value.length === 0 ||
-      value.startsWith("--")
-    ) throw new CliUsageError();
-    values.set(option, value);
-  }
-  if (argv.length !== 4 || values.size !== 2) throw new CliUsageError();
-  return {
-    bundlePath: values.get("--bundle"),
-    contentRoot: values.get("--content-root"),
-  };
-}
-
-export async function runImportCli(argv, {
-  stdout = process.stdout,
-  stderr = process.stderr,
-} = {}) {
-  let options;
-  try {
-    options = parseCliArguments(argv);
-  } catch (error) {
-    if (!(error instanceof CliUsageError)) throw error;
-    stderr.write(`${CLI_USAGE}\n`);
-    return 2;
-  }
-  try {
-    const result = await importEvidenceBundle(options);
-    stdout.write(`${result.status}: ${result.developmentPath}\n`);
-    return 0;
-  } catch (error) {
-    stderr.write(`${error.message}\n`);
-    return 1;
-  }
-}
-
 const invokedPath = process.argv[1]
   ? pathToFileURL(resolve(process.argv[1])).href
   : "";
 if (invokedPath === import.meta.url) {
-  runImportCli(process.argv.slice(2)).then(
-    status => { process.exitCode = status; },
-    () => {
-      process.stderr.write("evidence bundle import failed\n");
-      process.exitCode = 1;
-    },
+  process.stderr.write(
+    "Direct import.mjs execution is disabled; use npm run import-bundle -- --bundle <file>.\n",
   );
+  process.exitCode = 1;
 }

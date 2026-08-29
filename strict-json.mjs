@@ -43,11 +43,17 @@ function parseString(state) {
     const character = state.source[state.index];
     if (character === '"') {
       state.index += 1;
+      const token = state.source.slice(start, state.index);
+      let value;
       try {
-        return JSON.parse(state.source.slice(start, state.index));
+        value = JSON.parse(token);
       } catch {
         throw new StrictJsonError("JSON contains an invalid string");
       }
+      if (state.canonicalScalars && token !== JSON.stringify(value)) {
+        throw new StrictJsonError("JSON string must use its canonical scalar spelling");
+      }
+      return value;
     }
     if (character.charCodeAt(0) < 0x20) {
       throw new StrictJsonError("JSON strings must not contain control characters");
@@ -116,6 +122,12 @@ function parseNumber(state) {
   }
   if (!Number.isFinite(value)) {
     throw new StrictJsonError("JSON numbers must resolve to a finite JSON number");
+  }
+  if (
+    state.canonicalScalars &&
+    state.source.slice(start, state.index) !== JSON.stringify(value)
+  ) {
+    throw new StrictJsonError("JSON number must use its canonical scalar spelling");
   }
   return value;
 }
@@ -203,7 +215,7 @@ function parseValue(state) {
 
 export function parseStrictJsonBytes(
   input,
-  { maximumBytes = DEFAULT_MAXIMUM_BYTES } = {},
+  { maximumBytes = DEFAULT_MAXIMUM_BYTES, canonicalScalars = false } = {},
 ) {
   if (!(input instanceof Uint8Array)) {
     throw new StrictJsonError("strict JSON input must be a Uint8Array");
@@ -221,7 +233,7 @@ export function parseStrictJsonBytes(
   } catch {
     throw new StrictJsonError("strict JSON input must be valid UTF-8");
   }
-  const state = { source, index: 0, depth: 0 };
+  const state = { source, index: 0, depth: 0, canonicalScalars };
   skipWhitespace(state);
   const value = parseValue(state);
   skipWhitespace(state);

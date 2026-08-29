@@ -4,24 +4,30 @@
 
 **Goal:** Admit one authenticated `evidence-bundle.v2` through three independent GitHub provenance checks, independently prove its Federal Register compilation fact and atomically publish one restrained `development.v2` record.
 
-**Architecture:** `live-evidence.mjs` is the deep live-v2 parser, fact validator, rights checker and canonical transformer. `live-provenance.mjs` owns the exact no-shell GitHub CLI policy. `import-live.mjs` is the sole supported production entry point and fixes the repository content root internally, while `live-import-internals.mjs` contains unsupported test seams for filesystem failure simulation. Existing `evidence-bundle.mjs` and `import.mjs` remain the unchanged synthetic-v1 conformance path.
+**Architecture:** `live-evidence.mjs` is the deep live-v2 parser, fact validator, rights checker and canonical transformer. `live-provenance.mjs` owns the exact no-shell GitHub CLI policy. `import-live.mjs` is the sole supported production entry point and fixes the repository content root internally, while `live-import-internals.mjs` contains unsupported test seams for filesystem failure simulation. Existing `evidence-bundle.mjs` and the reusable import function in `import.mjs` remain the synthetic-v1 conformance path; direct `import.mjs` execution is disabled.
 
-**Tech Stack:** Node.js 24.19.0+, npm 11.17.0+, standard library only, Node test runner and GitHub CLI 2.98.0+.
+**Tech Stack:** Windows-only production admission, Node.js 24.19.0+, npm 11.17.0+, standard library only, Node test runner and GitHub CLI 2.98.0+.
 
-**Spec:** Producer repository commit `b5f4d23`, file `docs/superpowers/specs/2026-08-29-authenticated-live-evidence-admission-design.md`.
+**Spec:** Producer repository commit `1d651c3af11135f037f2c573f98d73d78b83f2da`, file `docs/superpowers/specs/2026-08-29-authenticated-live-evidence-admission-design.md`.
 
 ## Global Constraints
 
 - Work only on local publisher `main`; do not add a remote, push, deploy or import any unverified live record.
 - Add no npm dependency and preserve `package-lock.json` absence.
 - Copy the producer v2 golden fixture byte-for-byte; never regenerate it independently.
-- Keep existing v1 fixture bytes, parser and transformation conformance unchanged.
+- Keep existing v1 fixture bytes, parser and function-level transformation conformance unchanged; the legacy module is not an executable import command.
 - The supported production command is exactly `npm run import-bundle -- --bundle <file>`.
+- The `import-bundle` package script targets only `import-live.mjs`. Direct `node import.mjs ...` execution deterministically refuses before parsing input or mutating content, including with the former `--content-root` option.
 - No production command or supported programmatic export accepts a content root, mode, synthetic flag, operations override, verifier, provenance skip, offline trust, overwrite or retry.
 - Retain all three GitHub checks; invoke child processes with argument arrays and no shell.
+- Treat the downloaded bundle and all GitHub CLI output as untrusted. Trust the local operator account, checkout and destination namespace as exclusive apart from accidental concurrent runs of the same compliant importer.
+- Make no hostile same-principal, shared-account, multi-tenant or power-loss durability claim. Defer a native broker unless that threat boundary expands.
+- Support production admission only on Windows with the Node.js standard library. Non-Windows execution fails before any filesystem mutation.
+- Keep the exact bounded snapshot and all record staging under an importer-owned `content/.live-import-*`, outside build-discovered `content/developments`.
+- Rename the complete child record directory once into `content/developments/<development_id>`. Never remove or overwrite an existing target; return `unchanged` only for an exact one-file byte-identical target and conflict otherwise.
 - Preserve raw `start` as compilation date. Derive registration/publication date from the literal calendar component of raw `registeredAt` without timezone conversion or equality between those dates.
 - Recompute exact rights from validated `observation.checked_at`; never trust or reword the supplied rights object.
-- Every error before promotion leaves `content/developments` byte-for-byte unchanged.
+- Every error before promotion leaves build-discovered `content/developments` byte-for-byte unchanged, but a crash or failed best-effort cleanup may leave an ignored private `content/.live-import-*` orphan. A crash after promotion exposes the complete record, never partial staging.
 - Use Australian English in prose and exact official source names in code/data.
 
 ---
@@ -226,6 +232,7 @@ git commit -m "feat: verify live evidence provenance"
 - Create: `live-import-internals.mjs`
 - Create: `import-live.mjs`
 - Create: `test/import-live.test.mjs`
+- Modify: `.gitignore`
 - Modify: `package.json`
 - Modify: `import.mjs`
 - Modify: `test/import.test.mjs`
@@ -234,10 +241,11 @@ git commit -m "feat: verify live evidence provenance"
 - Produces supported API: `importLiveEvidenceBundle(bundlePath: string) -> Promise<{ status, developmentPath, bundleSha256 }>`.
 - Produces CLI: `runImportCli(argv, streams?) -> Promise<number>` accepting exactly `--bundle <file>`.
 - Internal-only `admitLiveEvidence({ bundlePath, repositoryRoot, operations, verifyProvenance })` is imported directly only by focussed tests and the fixed production wrapper; it is not re-exported.
+- Preserves `importEvidenceBundle` from `import.mjs` only for direct function-level v1 conformance tests; no legacy CLI parser or runner remains.
 
 - [ ] **Step 1: Write failing API, filesystem and idempotency tests**
 
-Test that the supported API has arity one and rejects object/options forms. CLI accepts exactly one `--bundle` pair and rejects every unknown/repeated/missing option including `--content-root`, `--synthetic`, `--skip-provenance`, `--offline`, `--overwrite` and `--retry`. Through the internal seam, test unsafe input/root ancestors, links/junctions/reparse points, input inside target, exact private snapshot, snapshot byte change, each provenance failure, semantic failure, write/re-read/race/rename/cleanup failure, exact reimport and changed same-identity conflict. Snapshot must be deleted before final staging enumeration.
+Test that the supported API has arity one and rejects object/options forms. CLI accepts exactly one `--bundle` pair and rejects every unknown/repeated/missing option including `--content-root`, `--synthetic`, `--skip-provenance`, `--offline`, `--overwrite` and `--retry`. Spawn `node import.mjs --bundle <valid-v1-live-file> --content-root <temporary-content-root>` and require a deterministic non-zero refusal plus byte-for-byte unchanged temporary content; this proves the former directly executable v1 path cannot bypass provenance. Assert the package script targets exactly `node import-live.mjs`. Through the internal seam, test non-Windows refusal before mutation; unsafe input/root ancestors; links/junctions/reparse points; input inside the target; exact bounded snapshot and canonical revalidation within `content/.live-import-*`; each provenance and semantic failure; write/re-read/race/rename failures; permitted private orphaning when best-effort cleanup fails; static-build exclusion of private work; exact one-file byte-identical reimport; and every other existing same-identity target as a conflict.
 
 - [ ] **Step 2: Run admission tests and verify RED**
 
@@ -249,11 +257,11 @@ Expected: missing modules/production command behaviour.
 
 - [ ] **Step 3: Implement internal admission in the required order**
 
-Resolve and validate paths; create an importer-owned staging directory under the fixed content root; snapshot the bounded input once; re-read exact bytes; parse only enough v2 envelope to derive release tag; run `verifyLiveBundleSnapshot`; perform full semantic parse/transform; calculate canonical bytes; re-read and validate them; remove the private snapshot; assert staging contains exactly `development.json`; then rename once. Existing exact canonical bytes return `unchanged`; every difference conflicts.
+Reject non-Windows execution before mutation. Resolve and validate the fixed paths; create one importer-owned `content/.live-import-*` work directory outside `content/developments`; snapshot the bounded input once there; re-read exact bytes; parse only enough v2 envelope to derive the release tag; run `verifyLiveBundleSnapshot`; perform full semantic parse and transformation; write the complete child record directory in the same private work area; re-read and validate its canonical bytes; remove the snapshot; and assert the child contains exactly one ordinary `development.json` before renaming that child once into `content/developments/<development_id>`. Never remove or overwrite a target. Treat only an exact one-file byte-identical target as `unchanged`, including after an accidental concurrent compliant import; every other target conflicts. Best-effort cleanup touches only owned private work and may leave an ignored orphan.
 
 - [ ] **Step 4: Implement the fixed production wrapper and package command**
 
-Resolve repository root from `import.meta.url` and hard-code `content/developments` relative to that root. Change only the package script target:
+Resolve repository root from `import.meta.url` and hard-code `content/developments` relative to that root. Add `content/.live-import-*` to `.gitignore`; the static build remains restricted to `content/developments`. Make the package script target exclusively `import-live.mjs`:
 
 ```json
 {
@@ -263,13 +271,13 @@ Resolve repository root from `import.meta.url` and hard-code `content/developmen
 }
 ```
 
-Keep `import.mjs` available only to existing v1 conformance tests; remove no v1 test seam. Add all new modules/tests to the syntax-check portion of `npm run check`.
+In `import.mjs`, retain `importEvidenceBundle` for existing direct function-level v1 conformance tests, delete the legacy CLI argument parser and runner, and replace direct invocation with one fixed non-zero refusal that does not parse the bundle or touch the filesystem. Do not route `import-live.mjs` through the legacy function. Add all new modules/tests to the syntax-check portion of `npm run check`.
 
 - [ ] **Step 5: Run import tests GREEN and commit**
 
 ```powershell
 node --test test/import-live.test.mjs test/import.test.mjs
-git add live-import-internals.mjs import-live.mjs test/import-live.test.mjs package.json import.mjs test/import.test.mjs
+git add live-import-internals.mjs import-live.mjs test/import-live.test.mjs .gitignore package.json import.mjs test/import.test.mjs
 git diff --cached --check
 git commit -m "feat: admit live evidence atomically"
 ```
@@ -286,7 +294,7 @@ git commit -m "feat: admit live evidence atomically"
 
 - [ ] **Step 1: Update documentation**
 
-Document the exact fixed-root production command, required authenticated GitHub CLI version, three provenance checks, registration/compilation distinction, immutable per-asset rights, source-only claim, atomic no-overwrite behaviour and the remaining separate hosted activation/deployment approvals. Remove the old production `--content-root` command from README without removing v1 conformance documentation.
+Document the exact fixed-root, Windows-only production command, required authenticated GitHub CLI version, three provenance checks, registration/compilation distinction, immutable per-asset rights, source-only claim, atomic no-overwrite behaviour, private-orphan limit and the remaining separate hosted activation/deployment approvals. Remove the old production `--content-root` command from README without removing v1 conformance documentation.
 
 - [ ] **Step 2: Run cross-repository fixture proof**
 
