@@ -9,7 +9,7 @@ const WORKFLOW =
   "ryanduguid/au-tax-legislation-corpus/.github/workflows/publish-live-evidence.yml";
 const RELEASE_TAG = /^live-evidence-v2-[0-9a-f]{64}$/;
 const VERSION_LINE =
-  /^gh version ((?:0|[1-9][0-9]{0,8}))\.((?:0|[1-9][0-9]{0,8}))\.((?:0|[1-9][0-9]{0,8})) \([^\r\n]+\)$/;
+  /^gh version ((?:0|[1-9][0-9]{0,8}))\.((?:0|[1-9][0-9]{0,8}))\.((?:0|[1-9][0-9]{0,8})) \([0-9]{4}-[0-9]{2}-[0-9]{2}\)$/;
 const EXEC_OPTIONS = Object.freeze({
   encoding: "utf8",
   maxBuffer: 65_536,
@@ -61,10 +61,10 @@ function readStdout(result) {
 }
 
 function readInput(input) {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return null;
-  }
   try {
+    if (input === null || typeof input !== "object" || Array.isArray(input)) {
+      return null;
+    }
     return {
       snapshotPath: input.snapshotPath,
       releaseTag: input.releaseTag,

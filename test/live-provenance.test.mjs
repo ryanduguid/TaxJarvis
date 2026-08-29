@@ -186,6 +186,18 @@ test("rejects invalid inputs before invoking the runner", async () => {
     ),
     ERROR_MESSAGES.runner,
   );
+  const revokedRunner = fakeRunner();
+  const revokedRequest = Proxy.revocable({
+    snapshotPath: SNAPSHOT_PATH,
+    releaseTag: RELEASE_TAG,
+    run: revokedRunner.run,
+  }, {});
+  revokedRequest.revoke();
+  await assertFixedFailure(
+    verifyWithRunner(revokedRequest.proxy),
+    ERROR_MESSAGES.runner,
+  );
+  assert.equal(revokedRunner.calls.length, 0);
 
   await assertFixedFailure(
     verifyWithRunner({
@@ -264,6 +276,7 @@ test("rejects unavailable, old and non-official version output", async () => {
     "\ngh version 2.98.0 (2026-08-27)\n",
     "not a version\ngh version 2.98.0 (2026-08-27)\n",
     "gh version 2.98.0 (2026-08-27) trailing\n",
+    "gh version 2.98.0 (2026-08-27) trailing (spoof)\n",
     "gh version 2.98.0.evil (2026-08-27)\n",
     { toString: () => VERSION_OUTPUT },
   ]) {
