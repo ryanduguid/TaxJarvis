@@ -42,7 +42,7 @@ These checks authenticate the admitted bytes and their GitHub production path. T
 
 The registration/publication date is the literal calendar part of the source `registeredAt` field, without timezone conversion. The compilation date is the source `start` field. They describe different events and need not be equal.
 
-After provenance and semantic validation, the importer serialises and exactly revalidates one canonical `development.json` in private staging outside `content/developments`, then promotes its complete directory with one rename. An existing target containing exactly that one byte-identical file returns `unchanged`; every other existing target conflicts. The importer never repairs, deletes or overwrites a target.
+After provenance and semantic validation, the importer serialises and exactly revalidates one canonical `development.json` in private staging outside `content/developments`, then promotes its complete directory with one rename. An existing target containing exactly that one byte-identical file returns `unchanged`; every other existing target conflicts. Within the cooperative operating boundary described below, the importer never repairs, deletes or overwrites an existing target.
 
 This transaction assumes a trusted, exclusive local operator, checkout and destination namespace, apart from concurrent compliant imports. It does not provide a hostile same-principal, shared-account, multi-tenant or power-loss guarantee. A crash or failed best-effort cleanup may leave only an ignored `content/.live-import-*` orphan outside the build namespace.
 
