@@ -1,6 +1,6 @@
 # Australian Tax Intelligence
 
-This repository is a non-production, source-only demonstration for a future public service covering Australian tax and accounting developments for practising accountants and tax agents.
+This repository is a non-production source-only demonstration for a future public service covering Australian tax and accounting developments for practising accountants and tax agents.
 
 It contains one artificial public demonstration record. No live record has been admitted. It has no hosted source monitor, automatic or unattended publication, AI explainer or deployment, and it does not provide tax advice or replace source checking and professional judgement.
 
