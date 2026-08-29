@@ -67,6 +67,18 @@ test("repository contract: package has no package graph", async () => {
   assert.equal(Object.hasOwn(packageJson, "devDependencies"), false);
 });
 
+test("rendering uses the TaxJarvis public identity in HTML and RSS", () => {
+  const files = renderSite([fixture], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  });
+
+  const home = files.get("index.html");
+  assert.match(home, /<title>Recent developments \| TaxJarvis<\/title>/);
+  assert.match(home, /<a class="site-name"[^>]*>TaxJarvis<\/a>/);
+  assert.match(files.get("feed.xml"), /<channel>\s*<title>TaxJarvis<\/title>/);
+});
+
 test("canonical fixture: validation accepts the source-only record", () => {
   assert.deepEqual(validateDevelopment(fixture), {
     ok: true,

@@ -334,7 +334,7 @@ function livePresentation(record) {
   };
 }
 
-const SITE_NAME = "Australian Tax Intelligence";
+const SITE_NAME = "TaxJarvis";
 
 function modeLabel(mode) {
   return mode === "live" ? "Live" : "Synthetic";
