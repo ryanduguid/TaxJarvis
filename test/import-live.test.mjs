@@ -56,16 +56,6 @@ const REAL_OPERATIONS = Object.freeze({
   writeFile,
 });
 
-function deferred() {
-  let resolvePromise;
-  let rejectPromise;
-  const promise = new Promise((resolveValue, rejectValue) => {
-    resolvePromise = resolveValue;
-    rejectPromise = rejectValue;
-  });
-  return { promise, resolve: resolvePromise, reject: rejectPromise };
-}
-
 async function temporaryRepository(t, { bundleBytes } = {}) {
   const repositoryRoot = await mkdtemp(join(tmpdir(), "tax-live-import-"));
   t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
@@ -335,8 +325,8 @@ test("private work is invisible to the static build while provenance is paused",
     new URL("../assets/site.css", import.meta.url),
     join(paths.repositoryRoot, "assets", "site.css"),
   );
-  const entered = deferred();
-  const release = deferred();
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
   const admission = admitLiveEvidence({
     bundlePath: paths.bundlePath,
     repositoryRoot: paths.repositoryRoot,
@@ -360,21 +350,34 @@ test("private work is invisible to the static build while provenance is paused",
   assert.equal((await admission).status, "imported");
 });
 
-test("concurrent compliant imports publish one complete identical record", async t => {
+test("concurrent compliant imports publish one complete identical record", {
+  timeout: 10_000,
+}, async t => {
   if (process.platform !== "win32") return t.skip("Windows-only admission");
   const paths = await temporaryRepository(t);
+  const bothAtRename = Promise.withResolvers();
+  let renameEntrants = 0;
+  const synchronisedRename = async (...arguments_) => {
+    renameEntrants += 1;
+    if (renameEntrants === 2) bothAtRename.resolve();
+    await bothAtRename.promise;
+    return rename(...arguments_);
+  };
   const [first, second] = await Promise.all([
     admitLiveEvidence({
       bundlePath: paths.bundlePath,
       repositoryRoot: paths.repositoryRoot,
+      operations: { rename: synchronisedRename },
       verifyProvenance: async () => {},
     }),
     admitLiveEvidence({
       bundlePath: paths.bundlePath,
       repositoryRoot: paths.repositoryRoot,
+      operations: { rename: synchronisedRename },
       verifyProvenance: async () => {},
     }),
   ]);
+  assert.equal(renameEntrants, 2);
   assert.deepEqual([first.status, second.status].sort(), ["imported", "unchanged"]);
   const targetPath = join(paths.developmentsPath, DEVELOPMENT_ID);
   assert.deepEqual(await directoryNames(targetPath), ["development.json"]);
@@ -382,6 +385,49 @@ test("concurrent compliant imports publish one complete identical record", async
     await readFile(join(targetPath, "development.json")),
     canonicalRecordBytes(),
   );
+  assert.deepEqual(await directoryNames(paths.contentPath), ["developments"]);
+});
+
+test("a real Windows rename collision preserves a conflicting directory winner", {
+  timeout: 10_000,
+}, async t => {
+  if (process.platform !== "win32") return t.skip("Windows-only admission");
+  const paths = await temporaryRepository(t);
+  const targetPath = join(paths.developmentsPath, DEVELOPMENT_ID);
+  const atRename = Promise.withResolvers();
+  const releaseRename = Promise.withResolvers();
+  let collisionCode = null;
+  const admission = admitLiveEvidence({
+    bundlePath: paths.bundlePath,
+    repositoryRoot: paths.repositoryRoot,
+    operations: {
+      rename: async (...arguments_) => {
+        atRename.resolve();
+        await releaseRename.promise;
+        try {
+          return await rename(...arguments_);
+        } catch (error) {
+          collisionCode = error.code;
+          throw error;
+        }
+      },
+    },
+    verifyProvenance: async () => {},
+  });
+
+  await atRename.promise;
+  await mkdir(targetPath);
+  const conflictingPath = join(targetPath, "development.json");
+  await writeFile(conflictingPath, "keep");
+  releaseRename.resolve();
+
+  await assert.rejects(
+    admission,
+    /existing live development conflicts with the evidence bundle/,
+  );
+  assert.equal(collisionCode, "EPERM");
+  assert.equal(await readFile(conflictingPath, "utf8"), "keep");
+  assert.deepEqual(await directoryNames(targetPath), ["development.json"]);
   assert.deepEqual(await directoryNames(paths.contentPath), ["developments"]);
 });
 

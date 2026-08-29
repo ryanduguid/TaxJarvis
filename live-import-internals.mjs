@@ -288,14 +288,9 @@ async function existingTargetStatus({ operations, targetPath, expectedBytes }) {
 }
 
 async function verifyWorkDirectory(operations, candidate, contentPath) {
-  if (
-    typeof candidate !== "string" ||
-    !isAbsolute(candidate) ||
-    resolve(candidate) !== candidate ||
-    dirname(candidate) !== contentPath ||
-    !basename(candidate).startsWith(WORK_PREFIX) ||
-    basename(candidate).length === WORK_PREFIX.length
-  ) fail("private work directory escaped its fixed boundary");
+  if (!ownedWorkPath(candidate, contentPath)) {
+    fail("private work directory escaped its fixed boundary");
+  }
   await requireCanonicalDirectory(
     operations,
     candidate,
