@@ -11,6 +11,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { validateCanonicalDevelopmentV2 } from "./evidence-bundle.mjs";
+import { validateLiveDevelopmentV2 } from "./live-evidence.mjs";
 import { parseStrictJsonBytes } from "./strict-json.mjs";
 import {
   exactKeys,
@@ -89,7 +90,12 @@ export function validateDevelopment(input) {
     return validateDevelopmentV1(input);
   }
   if (input.schema_version === "development.v2") {
-    return validateCanonicalDevelopmentV2(input);
+    if (input.mode === "synthetic") return validateCanonicalDevelopmentV2(input);
+    if (input.mode === "live") return validateLiveDevelopmentV2(input);
+    return {
+      ok: false,
+      errors: [{ path: "mode", message: "has an unsupported value" }],
+    };
   }
   return {
     ok: false,
@@ -291,6 +297,46 @@ function formatDate(timestamp) {
   }).format(new Date(timestamp));
 }
 
+const LIVE_CLAIM = "The Federal Register reports a newer registered current compilation for this title.";
+
+function livePresentation(record) {
+  const previousNumber = record.source_event.previous_compilation.number ??
+    "No compilation number recorded";
+  const currentNumber = record.source_event.current_compilation.number;
+  const compilationDate = formatDate(
+    `${record.source_event.current_compilation.date}T00:00:00Z`,
+  );
+  const registrationDate = formatDate(record.published_at);
+  const officialUrl = record.sources[0].canonical_url;
+  const releaseTag = `live-evidence-v2-${record.upstream.producer.observation_facts_sha256.slice("sha256:".length)}`;
+  const evidenceUrl = `https://github.com/ryanduguid/au-tax-legislation-corpus/releases/tag/${releaseTag}`;
+  const headline = `New compilation: ${record.title}`;
+  const summary = [
+    LIVE_CLAIM,
+    `Registered: ${registrationDate}`,
+    `Compilation date: ${compilationDate}`,
+    `Previous compilation number: ${previousNumber}`,
+    `Current compilation number: ${currentNumber}`,
+    `Official source: ${officialUrl}`,
+    `Evidence release: ${evidenceUrl}`,
+    `Authority: ${record.authority_status}`,
+    `Evidence: ${record.evidence_status}`,
+    `Publication: ${record.publication_status}`,
+    `Mode: ${record.mode}`,
+  ].join("; ");
+  return {
+    headline,
+    claim: LIVE_CLAIM,
+    registrationDate,
+    compilationDate,
+    previousNumber,
+    currentNumber,
+    officialUrl,
+    evidenceUrl,
+    summary,
+  };
+}
+
 const SITE_NAME = "Australian Tax Intelligence";
 
 function modeLabel(mode) {
@@ -344,14 +390,30 @@ function developmentUrl(siteUrl, record) {
 }
 
 function renderHome(records, siteUrl) {
-  const items = records.map(record => `
+  const items = records.map(record => {
+    if (record.mode === "live") {
+      const live = livePresentation(record);
+      return `
+    <article class="development-card">
+      <p class="eyebrow">${escapeHtml(recordLabel(record.mode))}</p>
+      <h2><a href="${escapeHtml(developmentUrl(siteUrl, record))}">${escapeHtml(live.headline)}</a></h2>
+      <p>${escapeHtml(live.claim)}</p>
+      <p>Registered: <time datetime="${escapeHtml(record.published_at)}">${escapeHtml(live.registrationDate)}</time> · Compilation date: <time datetime="${escapeHtml(record.source_event.current_compilation.date)}">${escapeHtml(live.compilationDate)}</time></p>
+      <p>Previous compilation number: ${escapeHtml(live.previousNumber)} · Current compilation number: ${escapeHtml(live.currentNumber)}</p>
+      ${statusList(record)}
+      <p><strong>Official source:</strong> <a href="${escapeHtml(live.officialUrl)}" rel="external noopener">${escapeHtml(live.officialUrl)}</a></p>
+      <p><strong>Evidence release:</strong> <a href="${escapeHtml(live.evidenceUrl)}" rel="external noopener">${escapeHtml(live.evidenceUrl)}</a></p>
+    </article>`;
+    }
+    return `
     <article class="development-card">
       <p class="eyebrow">${escapeHtml(recordLabel(record.mode))}</p>
       <h2><a href="${escapeHtml(developmentUrl(siteUrl, record))}">${escapeHtml(record.title)}</a></h2>
       <p>Published <time datetime="${escapeHtml(record.published_at)}">${escapeHtml(formatDate(record.published_at))}</time> · updated <time datetime="${escapeHtml(record.revision.updated_at)}">${escapeHtml(formatDate(record.revision.updated_at))}</time></p>
       ${statusList(record)}
       <p><strong>Affected practice:</strong> ${record.affected_practice_areas.map(escapeHtml).join(", ")}</p>
-    </article>`).join("");
+    </article>`;
+  }).join("");
 
   const containsLive = records.some(record => record.mode === "live");
   return layout({
@@ -393,6 +455,33 @@ function renderSource(source, mode) {
 }
 
 function renderDevelopment(record, siteUrl) {
+  if (record.mode === "live") {
+    const live = livePresentation(record);
+    const source = record.sources[0];
+    return layout({
+      title: live.headline,
+      siteUrl,
+      body: `
+      <article>
+        <p class="eyebrow">${escapeHtml(recordLabel(record.mode))}</p>
+        <h1>${escapeHtml(live.headline)}</h1>
+        <p>${escapeHtml(live.claim)}</p>
+        <p>Development ID: <code>${escapeHtml(record.development_id)}</code></p>
+        <p>Registered: <time datetime="${escapeHtml(record.published_at)}">${escapeHtml(live.registrationDate)}</time> · Compilation date: <time datetime="${escapeHtml(record.source_event.current_compilation.date)}">${escapeHtml(live.compilationDate)}</time></p>
+        <p>Previous compilation number: ${escapeHtml(live.previousNumber)} · Current compilation number: ${escapeHtml(live.currentNumber)}</p>
+        ${statusList(record)}
+        <section aria-labelledby="sources"><h2 id="sources">Primary source</h2>
+          <p><strong>Official source:</strong> <a href="${escapeHtml(live.officialUrl)}" rel="external noopener">${escapeHtml(live.officialUrl)}</a></p>
+          <p><strong>Evidence release:</strong> <a href="${escapeHtml(live.evidenceUrl)}" rel="external noopener">${escapeHtml(live.evidenceUrl)}</a></p>
+          <p>Attribution: ${escapeHtml(source.rights.attribution)}</p>
+          <p><a href="${escapeHtml(source.rights.licence_url)}" rel="external noopener">Source licence</a></p>
+        </section>
+        <section aria-labelledby="revision"><h2 id="revision">Revision</h2>
+          <p>Revision ${escapeHtml(record.revision.number)}: ${escapeHtml(record.revision.change_note)}</p>
+        </section>
+      </article>`,
+    });
+  }
   const syntheticWarning = record.mode === "synthetic"
     ? `
         <aside class="notice synthetic-warning" aria-labelledby="synthetic-status">
@@ -473,21 +562,35 @@ function latestUpdatedAt(records) {
   return latest;
 }
 
+function statusSummary(record) {
+  return [
+    `Authority: ${record.authority_status}`,
+    `Evidence: ${record.evidence_status}`,
+    `Publication: ${record.publication_status}`,
+    `Mode: ${record.mode}`,
+  ].join("; ");
+}
+
 function renderFeedJson(records, siteUrl) {
   const updatedAt = latestUpdatedAt(records);
   return `${JSON.stringify({
     schema_version: "feed.v2",
     updated_at: updatedAt,
-    items: records.map(record => ({
-      development_id: record.development_id,
-      url: developmentUrl(siteUrl, record),
-      title: record.title,
-      mode: record.mode,
-      authority_status: record.authority_status,
-      evidence_status: record.evidence_status,
-      publication_status: record.publication_status,
-      updated_at: record.revision.updated_at,
-    })),
+    items: records.map(record => {
+      const live = record.mode === "live" ? livePresentation(record) : null;
+      return {
+        development_id: record.development_id,
+        url: developmentUrl(siteUrl, record),
+        title: live === null ? record.title : live.headline,
+        summary: live === null ? statusSummary(record) : live.summary,
+        mode: record.mode,
+        authority_status: record.authority_status,
+        evidence_status: record.evidence_status,
+        publication_status: record.publication_status,
+        published_at: record.published_at,
+        updated_at: record.revision.updated_at,
+      };
+    }),
   }, null, 2)}\n`;
 }
 
@@ -495,16 +598,13 @@ function renderFeedXml(records, siteUrl) {
   const updatedAt = latestUpdatedAt(records);
   const items = records.map(record => {
     const url = developmentUrl(siteUrl, record);
-    const description = [
-      `Authority: ${record.authority_status}`,
-      `Evidence: ${record.evidence_status}`,
-      `Publication: ${record.publication_status}`,
-      `Mode: ${record.mode}`,
-    ].join("; ");
+    const live = record.mode === "live" ? livePresentation(record) : null;
+    const title = live === null ? record.title : live.headline;
+    const description = live === null ? statusSummary(record) : live.summary;
     return `
     <item>
       <guid isPermaLink="false">${escapeXml(record.development_id)}</guid>
-      <title>${escapeXml(record.title)}</title>
+      <title>${escapeXml(title)}</title>
       <link>${escapeXml(url)}</link>
       <pubDate>${escapeXml(new Date(record.published_at).toUTCString())}</pubDate>
       <atom:updated>${escapeXml(record.revision.updated_at)}</atom:updated>
