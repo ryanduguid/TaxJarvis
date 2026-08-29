@@ -1279,6 +1279,7 @@ function assertWorkflowPolicy(workflow) {
 
   assert.deepEqual(actualActions, expectedActions);
   assert.match(workflow, /pull_request:/);
+  assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /branches:\s*\n\s+- main/);
   assert.match(workflow, /npm run check/);
   assert.match(workflow, /npm run smoke/);
@@ -1286,7 +1287,10 @@ function assertWorkflowPolicy(workflow) {
   assert.match(workflow, /pages: write/);
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /needs: validate/);
-  assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
+  assert.match(
+    workflow,
+    /github\.ref == 'refs\/heads\/main' && github\.event_name == 'workflow_dispatch'/,
+  );
   assert.equal(
     (workflow.match(/^\s*package-manager-cache:\s*false\s*$/gm) ?? []).length,
     2,
@@ -1307,6 +1311,7 @@ test("workflow policy: one pinned workflow validates before main deployment", as
 test("workflow policy rejects unsafe action, cache and installation mutations", () => {
   const approvedWorkflow = [
     "pull_request:",
+    "workflow_dispatch:",
     "branches:\n  - main",
     "npm run check",
     "npm run smoke",
@@ -1314,7 +1319,7 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     "pages: write",
     "id-token: write",
     "needs: validate",
-    "github.ref == 'refs/heads/main'",
+    "github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'",
     "uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
     "uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
     "uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
@@ -1335,6 +1340,10 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     `${approvedWorkflow}\n- uses: actions/cache@v4`,
     `${approvedWorkflow}\ncache: npm`,
     approvedWorkflow.replace("package-manager-cache: false", "package-manager-cache: true"),
+    approvedWorkflow.replace(
+      "github.event_name == 'workflow_dispatch'",
+      "github.event_name != 'pull_request'",
+    ),
     `${approvedWorkflow}\nrun: npm   install`,
     `${approvedWorkflow}\ncontinue-on-error: true`,
   ]) {

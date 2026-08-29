@@ -34,7 +34,7 @@ jobs:
         run: npm run smoke
 
   publish:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     needs: validate
     permissions:
       contents: read
