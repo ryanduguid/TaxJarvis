@@ -23,6 +23,10 @@ import {
   parseEvidenceBundle,
   transformEvidenceBundle,
 } from "../evidence-bundle.mjs";
+import {
+  parseLiveEvidenceBundle,
+  transformLiveEvidenceBundle,
+} from "../live-evidence.mjs";
 import { startServer } from "../serve.mjs";
 import {
   buildSite,
@@ -43,6 +47,14 @@ const parsedBundleFixture = parseEvidenceBundle(await readFile(bundleFixtureUrl)
 const v2Fixture = transformEvidenceBundle(parsedBundleFixture.bundle, {
   bundleSha256: parsedBundleFixture.bundleSha256,
 });
+const liveBundleFixtureUrl = new URL(
+  "./fixtures/evidence-bundle.v2.json",
+  import.meta.url,
+);
+const parsedLiveBundleFixture = parseLiveEvidenceBundle(
+  await readFile(liveBundleFixtureUrl),
+);
+const liveFixture = transformLiveEvidenceBundle(parsedLiveBundleFixture);
 
 test("repository contract: package has no package graph", async () => {
   const packageJson = JSON.parse(
@@ -67,6 +79,22 @@ test("development.v2 accepts the exact imported canonical record", () => {
     ok: true,
     value: v2Fixture,
   });
+});
+
+test("development.v2 routes a live record and rejects every other mode at mode", () => {
+  assert.deepEqual(validateDevelopment(liveFixture), {
+    ok: true,
+    value: liveFixture,
+  });
+
+  for (const mode of [undefined, 7, "preview"]) {
+    const candidate = structuredClone(v2Fixture);
+    if (mode === undefined) delete candidate.mode;
+    else candidate.mode = mode;
+    const result = validateDevelopment(candidate);
+    assert.equal(result.ok, false);
+    assert.equal(result.errors.some(error => error.path === "mode"), true);
+  }
 });
 
 const v2Mutations = [
@@ -369,10 +397,12 @@ test("rendering projects one identity, mode and three statuses to every format",
     "development_id",
     "url",
     "title",
+    "summary",
     "mode",
     "authority_status",
     "evidence_status",
     "publication_status",
+    "published_at",
     "updated_at",
   ]);
   assert.equal(
@@ -420,39 +450,138 @@ test("rendering preserves synthetic mode in HTML, RSS and JSON Feed", () => {
   );
 });
 
-test("rendering a valid live v2 record omits the demonstration warning", () => {
-  const liveBundle = structuredClone(parsedBundleFixture.bundle);
-  liveBundle.mode = "live";
-  liveBundle.sources[0].canonical_url =
-    "https://www.legislation.gov.au/C2099A00001/latest/text";
-  liveBundle.sources[0].rights.attribution =
-    "Federal Register of Legislation";
-  const accepted = parseEvidenceBundle(
-    Buffer.from(JSON.stringify(liveBundle), "utf8"),
-  );
-  const liveRecord = transformEvidenceBundle(accepted.bundle, {
-    bundleSha256: accepted.bundleSha256,
-  });
-  assert.deepEqual(validateDevelopment(liveRecord), {
-    ok: true,
-    value: liveRecord,
-  });
-
-  const files = renderSite([liveRecord], {
+test("live rendering publishes one restrained compilation account in every format", () => {
+  const files = renderSite([liveFixture], {
     siteUrl: "https://publisher.example/",
     cssText: "",
   });
   const development = files.get(
-    `developments/${liveRecord.development_id}/index.html`,
+    `developments/${liveFixture.development_id}/index.html`,
   );
+  const developmentRecord = development.match(/<article>.*?<\/article>/s)[0];
+  const home = files.get("index.html");
+  const homeRecord = home.match(/<article class="development-card">.*?<\/article>/s)[0];
   const methodology = files.get("methodology/index.html");
+  const rss = files.get("feed.xml");
+  const rssItem = rss.match(/<item>.*?<\/item>/s)[0];
   const feed = JSON.parse(files.get("feed.json"));
-  assert.match(development, /Live/);
-  assert.doesNotMatch(development, /demonstration data/i);
+  const feedItem = feed.items[0];
+  const feedRecord = JSON.stringify(feedItem);
+  const representations = [homeRecord, developmentRecord, rssItem, feedRecord];
+  const headline = "New compilation: Taxation Administration Regulations 2017";
+  const claim = "The Federal Register reports a newer registered current compilation for this title.";
+  const officialUrl = "https://www.legislation.gov.au/F2022L00347/latest/text";
+  const evidenceUrl = "https://github.com/ryanduguid/au-tax-legislation-corpus/releases/tag/live-evidence-v2-8ea331ff6670fe1f2221146f33f74cfd6c210b3d9c7eca48da2c592fe5d8764f";
+
+  for (const output of representations) {
+    for (const expected of [
+      headline,
+      claim,
+      "27 August 2026",
+      "18 August 2026",
+      "Previous compilation number: 19",
+      "Current compilation number: 20",
+      officialUrl,
+      evidenceUrl,
+    ]) assert.equal(output.includes(expected), true, `missing ${expected}`);
+    assert.doesNotMatch(output, /Registered(?: date)?:?\s*18 August 2026/i);
+    assert.doesNotMatch(output, /\b(?:amended|commenced|impact|advice)\b/i);
+  }
+
+  assert.match(homeRecord, /datetime="2026-08-27T00:00:00Z"/);
+  assert.match(developmentRecord, /datetime="2026-08-27T00:00:00Z"/);
+  const rssPublishedAt = rssItem.match(/<pubDate>([^<]+)<\/pubDate>/)[1];
+  assert.equal(new Date(rssPublishedAt).toISOString(), "2026-08-27T00:00:00.000Z");
+  assert.equal(feedItem.published_at, "2026-08-27T00:00:00Z");
+  assert.deepEqual(Object.keys(feedItem), [
+    "development_id",
+    "url",
+    "title",
+    "summary",
+    "mode",
+    "authority_status",
+    "evidence_status",
+    "publication_status",
+    "published_at",
+    "updated_at",
+  ]);
+
+  for (const output of [homeRecord, developmentRecord]) {
+    assert.doesNotMatch(output, /Affected practice|Topics|Explainer status/i);
+  }
+  assert.match(developmentRecord, /in-force/);
+  assert.match(developmentRecord, /verified/);
+  assert.match(developmentRecord, /source-only/);
+  assert.doesNotMatch(developmentRecord, /demonstration data/i);
   assert.match(methodology, /live source records/i);
   assert.doesNotMatch(methodology, /one clearly labelled, non-production source fixture/i);
-  assert.match(files.get("feed.xml"), /Mode: live/);
-  assert.equal(feed.items[0].mode, "live");
+  assertWellFormedGeneratedXml(rss);
+});
+
+test("live rendering orders by registration and handles a missing previous number", () => {
+  const withoutPreviousNumber = structuredClone(liveFixture);
+  withoutPreviousNumber.source_event.previous_compilation.number = null;
+  assert.equal(validateDevelopment(withoutPreviousNumber).ok, true);
+
+  const earlier = changed(value => {
+    value.development_id = "dev-demo-earlier";
+    value.published_at = "2026-08-20T00:00:00Z";
+  });
+  const files = renderSite([earlier, withoutPreviousNumber], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  });
+  const feed = JSON.parse(files.get("feed.json"));
+  assert.equal(feed.items[0].development_id, liveFixture.development_id);
+
+  for (const output of [
+    files.get("index.html").match(/<article class="development-card">.*?<\/article>/s)[0],
+    files.get(`developments/${liveFixture.development_id}/index.html`),
+    files.get("feed.xml").match(/<item>.*?<\/item>/s)[0],
+    JSON.stringify(feed.items[0]),
+  ]) assert.equal(output.includes("Previous compilation number: No compilation number recorded"), true);
+});
+
+test("live rendering escapes bounded source text and preserves supplementary Unicode", () => {
+  const record = structuredClone(liveFixture);
+  record.title = `Tax & < "trust" \ud83d\ude00`;
+  record.sources[0].title = record.title;
+  record.source_event.previous_compilation.number = `19 & < "old" \ud83d\ude00`;
+  record.source_event.current_compilation.number = `20 & < "new" \ud83d\ude00`;
+  assert.equal(validateDevelopment(record).ok, true);
+
+  const files = renderSite([record], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  });
+  const rss = files.get("feed.xml");
+  assert.match(rss, /Tax &amp; &lt; &quot;trust&quot; \ud83d\ude00/);
+  assert.match(rss, /19 &amp; &lt; &quot;old&quot; \ud83d\ude00/);
+  assert.match(rss, /20 &amp; &lt; &quot;new&quot; \ud83d\ude00/);
+  assertWellFormedGeneratedXml(rss);
+  const feedItem = JSON.parse(files.get("feed.json")).items[0];
+  assert.equal(feedItem.title, `New compilation: ${record.title}`);
+  assert.match(feedItem.summary, /19 & < "old" \ud83d\ude00/);
+  assert.match(feedItem.summary, /20 & < "new" \ud83d\ude00/);
+});
+
+test("live rendering preserves a valid 500-code-point title", () => {
+  const record = structuredClone(liveFixture);
+  record.title = "x".repeat(500);
+  record.sources[0].title = record.title;
+  assert.equal(validateDevelopment(record).ok, true);
+
+  const files = renderSite([record], {
+    siteUrl: "https://publisher.example/",
+    cssText: "",
+  });
+  const headline = `New compilation: ${record.title}`;
+  for (const output of [
+    files.get("index.html"),
+    files.get(`developments/${record.development_id}/index.html`),
+    files.get("feed.xml"),
+    files.get("feed.json"),
+  ]) assert.equal(output.includes(headline), true);
 });
 
 test("rendering escapes a hostile record instead of creating markup", () => {
