@@ -196,7 +196,7 @@ function boundedText(errors, value, path, maximum) {
   if (
     typeof value !== "string" ||
     value.length === 0 ||
-    value.length > maximum ||
+    [...value].length > maximum ||
     value.trim() !== value ||
     !isXmlText(value) ||
     [...value].some(character => {
@@ -709,11 +709,7 @@ function parseRawResponse(errors, response, register) {
   if (response === null) return null;
   let document;
   try {
-    if (
-      response.bytes[0] === 0xef &&
-      response.bytes[1] === 0xbb &&
-      response.bytes[2] === 0xbf
-    ) throw new TypeError("byte-order mark");
+    if (hasByteOrderMark(response.bytes)) throw new TypeError("byte-order mark");
     document = parseStrictJsonBytes(response.bytes, {
       maximumBytes: MAXIMUM_RESPONSE_BYTES,
     });
@@ -951,16 +947,16 @@ export function parseLiveEvidenceBundle(bytes) {
     if (!(bytes instanceof Uint8Array) || hasByteOrderMark(bytes)) {
       throw new TypeError("invalid live evidence bytes");
     }
-    const bundle = parseStrictJsonBytes(bytes);
+    const bundle = parseStrictJsonBytes(bytes, { canonicalScalars: true });
     const { errors, fact } = validateLiveBundle(bundle);
     if (errors.length > 0 || fact === null) throw new TypeError("invalid contract");
     const bundleSha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
     const parsed = deepFreeze({
-      bundle: deepFreeze(bundle),
+      bundle,
       bundleSha256,
       releaseTag:
         `live-evidence-v2-${fact.observationSha256.slice("sha256:".length)}`,
-      fact: deepFreeze(fact),
+      fact,
     });
     acceptedParses.add(parsed);
     return parsed;

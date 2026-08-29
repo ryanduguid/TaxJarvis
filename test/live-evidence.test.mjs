@@ -273,6 +273,45 @@ test("strict JSON rejects malformed bytes, byte-order marks and duplicate member
   assert.throws(() => parseLiveEvidenceBundle(encode(value)));
 });
 
+test("live evidence rejects non-canonical outer number spellings", () => {
+  const source = goldenBytes.toString("utf8");
+  for (const [canonical, alternate] of [
+    ['"http_status": 200', '"http_status": 200.0'],
+    ['"http_status": 200', '"http_status": 2e2'],
+    ['"attempt_count": 1', '"attempt_count": 1.0'],
+  ]) {
+    assert.notEqual(source.indexOf(canonical), -1);
+    assert.throws(() => parseLiveEvidenceBundle(
+      Buffer.from(source.replace(canonical, alternate)),
+    ));
+  }
+});
+
+test("live evidence rejects non-canonical outer string escapes", () => {
+  const source = goldenBytes.toString("utf8");
+  for (const [canonical, alternate] of [
+    ['"schema_version"', String.raw`"schema_versi\u006fn"`],
+    ["https://api.prod.legislation.gov.au", String.raw`https:\/\/api.prod.legislation.gov.au`],
+  ]) {
+    assert.notEqual(source.indexOf(canonical), -1);
+    assert.throws(() => parseLiveEvidenceBundle(
+      Buffer.from(source.replace(canonical, alternate)),
+    ));
+  }
+});
+
+test("canonical scalar checks do not apply to decoded raw OData", () => {
+  const raw = Buffer.from(golden.primary_response_base64, "base64").toString("utf8");
+  const canonical = '"titleId":"F2022L00347"';
+  const alternate = String.raw`"titleId":"\u00462022L00347"`;
+  assert.notEqual(raw.indexOf(canonical), -1);
+
+  const parsed = parseLiveEvidenceBundle(encode(withResponseBytes(
+    Buffer.from(raw.replace(canonical, alternate)),
+  )));
+  assert.equal(parsed.fact.currentDocumentId, "F2026C00838");
+});
+
 test("producer receipt requires exact identity, SemVer and verified run values", () => {
   for (const version of [
     "01.2.3",
@@ -495,6 +534,25 @@ test("nullable previous compilation and 500-character live titles are supported"
   rejectMutation(candidate => { candidate.baseline_title.name = "A".repeat(501); });
   rejectMutation(candidate => { candidate.baseline_title.name = "Invalid\ufffftitle"; });
   rejectMutation(candidate => { candidate.baseline_title.compilation_number = " "; });
+});
+
+test("live title limits count Unicode code points", () => {
+  const title = "\u{1f4bc}".repeat(500);
+  const value = structuredClone(golden);
+  value.baseline_title.name = title;
+  const parsed = parseLiveEvidenceBundle(encode(value));
+  const record = transformLiveEvidenceBundle(parsed);
+
+  assert.equal(record.title, title);
+  assert.equal(validateLiveDevelopmentV2(record).ok, true);
+
+  rejectMutation(candidate => {
+    candidate.baseline_title.name = "\u{1f4bc}".repeat(501);
+  });
+  const invalidRecord = structuredClone(record);
+  invalidRecord.title = "\u{1f4bc}".repeat(501);
+  invalidRecord.sources[0].title = invalidRecord.title;
+  assert.equal(validateLiveDevelopmentV2(invalidRecord).ok, false);
 });
 
 test("rights are reconstructed from the observation date and carried through exactly", () => {
