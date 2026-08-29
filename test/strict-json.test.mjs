@@ -30,6 +30,35 @@ test("strict JSON accepts Buffer and a caller-supplied byte limit", () => {
   );
 });
 
+test("strict JSON canonical scalar checks are opt-in", () => {
+  const alternate = bytes(String.raw`{"\u0061":200.0,"path":"a\/b","zero":-0}`);
+  assert.deepEqual(parseStrictJsonBytes(alternate), {
+    a: 200,
+    path: "a/b",
+    zero: -0,
+  });
+
+  for (const source of [
+    String.raw`{"\u0061":200}`,
+    '{"a":200.0}',
+    '{"a":2e2}',
+    String.raw`{"a":"a\/b"}`,
+    '{"a":-0}',
+  ]) {
+    assert.throws(
+      () => parseStrictJsonBytes(bytes(source), { canonicalScalars: true }),
+      /canonical scalar/,
+    );
+  }
+
+  assert.deepEqual(
+    parseStrictJsonBytes(bytes(' { "b" : 2, "a" : 1 }\n'), {
+      canonicalScalars: true,
+    }),
+    { b: 2, a: 1 },
+  );
+});
+
 test("strict JSON rejects empty and whitespace-only input", () => {
   for (const source of ["", " \t\r\n"]) {
     assert.throws(
