@@ -319,10 +319,7 @@ function livePresentation(record) {
     `Current compilation number: ${currentNumber}`,
     `Official source: ${officialUrl}`,
     `Evidence release: ${evidenceUrl}`,
-    `Authority: ${record.authority_status}`,
-    `Evidence: ${record.evidence_status}`,
-    `Publication: ${record.publication_status}`,
-    `Mode: ${record.mode}`,
+    statusSummary(record),
   ].join("; ");
   return {
     headline,
