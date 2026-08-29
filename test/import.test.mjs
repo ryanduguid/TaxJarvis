@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { parseEvidenceBundle } from "../evidence-bundle.mjs";
 import * as legacyImport from "../import.mjs";
 import { buildSite, validateDevelopment } from "../site.mjs";
 
@@ -318,7 +319,9 @@ test("direct legacy execution refuses before parsing or content mutation", async
   liveValue.sources[0].canonical_url =
     "https://www.legislation.gov.au/C2099A00001/latest/text";
   liveValue.sources[0].rights.attribution = "Federal Register of Legislation";
-  await writeFile(liveBundle, `${JSON.stringify(liveValue, null, 2)}\n`);
+  const liveBytes = Buffer.from(`${JSON.stringify(liveValue, null, 2)}\n`);
+  assert.equal(parseEvidenceBundle(liveBytes).bundle.mode, "live");
+  await writeFile(liveBundle, liveBytes);
   const malformed = join(root, "malformed.json");
   await writeFile(malformed, '{"mode":"live","mode":"synthetic"}');
   const nonexistent = join(root, "does-not-exist.json");
