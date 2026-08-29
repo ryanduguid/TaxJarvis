@@ -143,6 +143,7 @@ test.before(async () => {
 });
 
 test.after(async () => {
+  if (realDevelopmentsBefore === undefined) return;
   assert.deepEqual(
     await snapshotDirectory(REAL_DEVELOPMENTS),
     realDevelopmentsBefore,
