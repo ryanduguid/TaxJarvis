@@ -15,16 +15,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import {
-  importEvidenceBundle,
-} from "../import.mjs";
+import * as legacyImport from "../import.mjs";
 import { buildSite, validateDevelopment } from "../site.mjs";
+
+const { importEvidenceBundle } = legacyImport;
 
 const GOLDEN = fileURLToPath(
   new URL("./fixtures/evidence-bundle.v1.json", import.meta.url),
 );
 const IMPORT_COMMAND = fileURLToPath(new URL("../import.mjs", import.meta.url));
 const DEVELOPMENT_ID = "dev-frl-c2099a00001-c2099c00002";
+
+test("legacy module exports only function-level v1 conformance", () => {
+  assert.deepEqual(Object.keys(legacyImport), ["importEvidenceBundle"]);
+});
 
 async function temporaryContentRoot(t) {
   const root = await mkdtemp(join(tmpdir(), "tax-import-"));
@@ -34,28 +38,18 @@ async function temporaryContentRoot(t) {
   return { root, contentRoot };
 }
 
-function runImportCli(arguments_) {
+function runLegacyImport(arguments_) {
   return spawnSync(process.execPath, [IMPORT_COMMAND, ...arguments_], {
     encoding: "utf8",
   });
 }
 
-test("default function and normal command reject synthetic bundles", async t => {
+test("default function rejects synthetic bundles", async t => {
   const { contentRoot } = await temporaryContentRoot(t);
   await assert.rejects(
     importEvidenceBundle({ bundlePath: GOLDEN, contentRoot }),
     /synthetic evidence bundles are not accepted/,
   );
-  assert.deepEqual(await readdir(contentRoot), []);
-
-  const command = runImportCli([
-    "--bundle",
-    GOLDEN,
-    "--content-root",
-    contentRoot,
-  ]);
-  assert.equal(command.status, 1);
-  assert.match(command.stderr, /synthetic evidence bundles are not accepted/);
   assert.deepEqual(await readdir(contentRoot), []);
 });
 
@@ -311,18 +305,39 @@ test("bundle input inside its final target is rejected before writing", async t 
   assert.deepEqual(await readFile(nestedBundle), before);
 });
 
-test("CLI rejects missing, repeated and unknown options with usage status", () => {
-  const cases = [
-    [],
-    ["--bundle", GOLDEN],
-    ["--content-root", "content/developments"],
-    ["--bundle", GOLDEN, "--bundle", GOLDEN, "--content-root", "content/developments"],
-    ["--bundle", GOLDEN, "--content-root", "content/developments", "--synthetic"],
-  ];
-  for (const arguments_ of cases) {
-    const result = runImportCli(arguments_);
-    assert.equal(result.status, 2);
-    assert.equal(result.stderr.match(/Usage:/g)?.length, 1);
+test("direct legacy execution refuses before parsing or content mutation", async t => {
+  const { root, contentRoot } = await temporaryContentRoot(t);
+  const sentinelDirectory = join(contentRoot, "dev-sentinel");
+  const sentinelPath = join(sentinelDirectory, "development.json");
+  await mkdir(sentinelDirectory);
+  await writeFile(sentinelPath, "keep");
+
+  const liveBundle = join(root, "live-v1.json");
+  const liveValue = JSON.parse(await readFile(GOLDEN, "utf8"));
+  liveValue.mode = "live";
+  liveValue.sources[0].canonical_url =
+    "https://www.legislation.gov.au/C2099A00001/latest/text";
+  liveValue.sources[0].rights.attribution = "Federal Register of Legislation";
+  await writeFile(liveBundle, `${JSON.stringify(liveValue, null, 2)}\n`);
+  const malformed = join(root, "malformed.json");
+  await writeFile(malformed, '{"mode":"live","mode":"synthetic"}');
+  const nonexistent = join(root, "does-not-exist.json");
+
+  for (const input of [liveBundle, malformed, nonexistent]) {
+    const result = runLegacyImport([
+      "--bundle",
+      input,
+      "--content-root",
+      contentRoot,
+    ]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.equal(
+      result.stderr,
+      "Direct import.mjs execution is disabled; use npm run import-bundle -- --bundle <file>.\n",
+    );
+    assert.deepEqual(await readdir(contentRoot), ["dev-sentinel"]);
+    assert.equal(await readFile(sentinelPath, "utf8"), "keep");
   }
 });
 
