@@ -212,7 +212,9 @@ test("CLI accepts only one separate --bundle value", async t => {
   );
   assert.deepEqual(capture.output(), {
     stdout: "",
-    stderr: "bundle input must be a canonical ordinary file\n",
+    stderr: process.platform === "win32"
+      ? "bundle input must be a canonical ordinary file\n"
+      : "live evidence admission requires Windows\n",
   });
 });
 
