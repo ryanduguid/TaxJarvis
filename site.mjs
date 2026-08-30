@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { validateCanonicalDevelopmentV2 } from "./evidence-bundle.mjs";
 import { validateLiveDevelopmentV2 } from "./live-evidence.mjs";
+import { previewPort } from "./serve.mjs";
 import { parseStrictJsonBytes } from "./strict-json.mjs";
 import {
   exactKeys,
@@ -686,16 +687,17 @@ const REPOSITORY_ROOT = fileURLToPath(new URL(".", import.meta.url));
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : "";
 
 if (invokedPath === import.meta.url) {
-  const previewPort = Number.parseInt(process.env.PORT ?? "4173", 10);
-  const siteUrl = process.env.SITE_URL ?? `http://127.0.0.1:${previewPort}/`;
-  buildSite({
-    rootDir: REPOSITORY_ROOT,
-    siteUrl,
-  }).then(
-    paths => console.log(`Built ${paths.length} files in out/`),
-    error => {
+  void (async () => {
+    try {
+      const port = previewPort(process.env.PORT);
+      const paths = await buildSite({
+        rootDir: REPOSITORY_ROOT,
+        siteUrl: process.env.SITE_URL ?? `http://127.0.0.1:${port}/`,
+      });
+      console.log(`Built ${paths.length} files in out/`);
+    } catch (error) {
       console.error(error.message);
       process.exitCode = 1;
-    },
-  );
+    }
+  })();
 }

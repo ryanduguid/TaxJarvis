@@ -5,6 +5,7 @@ import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ALLOWED_METHODS = new Set(["GET", "HEAD"]);
+const DEFAULT_PORT = 4173;
 const STATIC_ROUTES = new Map([
   ["/", "index.html"],
   ["/methodology/", "methodology/index.html"],
@@ -59,8 +60,17 @@ function decodedRequestPath(requestUrl) {
   return decoded;
 }
 
+async function developmentEntries(rootDir) {
+  try {
+    return await readdir(join(rootDir, "developments"), { withFileTypes: true });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return [];
+  }
+}
+
 async function publicRoutes(rootDir) {
-  const entries = await readdir(join(rootDir, "developments"), { withFileTypes: true });
+  const entries = await developmentEntries(rootDir);
   return new Map([
     ...STATIC_ROUTES,
     ...entries.filter(entry => entry.isDirectory()).map(entry => [
@@ -140,10 +150,18 @@ function createStaticServer({ rootDir, routes }) {
   return server;
 }
 
+export function previewPort(value = String(DEFAULT_PORT)) {
+  const port = /^\d+$/.test(value) ? Number(value) : Number.NaN;
+  if (!(port >= 1 && port <= 65535)) {
+    throw new TypeError(`PORT must be an integer from 1 to 65535, not "${value}"`);
+  }
+  return port;
+}
+
 export async function startServer({
   rootDir,
   hostname = "127.0.0.1",
-  port = 4173,
+  port = DEFAULT_PORT,
 }) {
   const canonicalRoot = await realpath(resolve(rootDir));
   const server = createStaticServer({
@@ -161,16 +179,18 @@ const REPOSITORY_ROOT = fileURLToPath(new URL(".", import.meta.url));
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : "";
 
 if (invokedPath === import.meta.url) {
-  const port = Number.parseInt(process.env.PORT ?? "4173", 10);
-  startServer({
-    rootDir: resolve(REPOSITORY_ROOT, "out"),
-    hostname: "127.0.0.1",
-    port,
-  }).then(
-    () => console.log(`Serving out/ at http://127.0.0.1:${port}/`),
-    error => {
+  void (async () => {
+    try {
+      const port = previewPort(process.env.PORT);
+      await startServer({
+        rootDir: resolve(REPOSITORY_ROOT, "out"),
+        hostname: "127.0.0.1",
+        port,
+      });
+      console.log(`Serving out/ at http://127.0.0.1:${port}/`);
+    } catch (error) {
       console.error(error.message);
       process.exitCode = 1;
-    },
-  );
+    }
+  })();
 }

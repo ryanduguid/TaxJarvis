@@ -27,7 +27,7 @@ import {
   parseLiveEvidenceBundle,
   transformLiveEvidenceBundle,
 } from "../live-evidence.mjs";
-import { startServer } from "../serve.mjs";
+import { previewPort, startServer } from "../serve.mjs";
 import {
   buildSite,
   renderSite,
@@ -783,6 +783,19 @@ async function unusedLoopbackPort() {
   return port;
 }
 
+function firstOutputLine(stream) {
+  return new Promise((resolve, reject) => {
+    let buffered = "";
+    stream.setEncoding("utf8");
+    stream.on("data", chunk => {
+      buffered += chunk;
+      const boundary = buffered.indexOf("\n");
+      if (boundary !== -1) resolve(buffered.slice(0, boundary));
+    });
+    stream.once("end", () => reject(new Error("output ended before a complete line")));
+  });
+}
+
 async function temporaryCommandWorkspace(t) {
   const workspace = await temporaryPublisher(t);
   const rootUrl = new URL("../", import.meta.url);
@@ -928,6 +941,65 @@ test("smoke: serves every generated development page and nothing beside them", a
   }
 });
 
+test("smoke: a preview root tolerates only an absent developments directory", async t => {
+  const workspace = await temporaryPublisher(t);
+  await buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "http://127.0.0.1:4173/",
+  });
+  await rm(join(workspace.outputDir, "developments"), { recursive: true });
+
+  const server = await startServer({
+    rootDir: workspace.outputDir,
+    hostname: "127.0.0.1",
+    port: 0,
+  });
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const { port } = server.address();
+
+  const home = await httpRequest({ hostname: "127.0.0.1", port, path: "/" });
+  assert.equal(home.statusCode, 200);
+  assert.match(home.headers["content-type"], /text\/html/);
+  assert.match(home.body, /Recent developments/);
+
+  const removed = await httpRequest({
+    hostname: "127.0.0.1",
+    port,
+    path: `/developments/${fixture.development_id}/`,
+  });
+  assert.equal(removed.statusCode, 404);
+  assert.equal(removed.body, "Not found\n");
+
+  await writeFile(join(workspace.outputDir, "developments"), "not a directory");
+  const outcome = await startServer({
+    rootDir: workspace.outputDir,
+    hostname: "127.0.0.1",
+    port: 0,
+  }).then(
+    started => ({ started }),
+    error => ({ error }),
+  );
+  if (outcome.started !== undefined) {
+    t.after(() => new Promise(resolve => outcome.started.close(resolve)));
+  }
+  assert.equal(outcome.started, undefined);
+  assert.notEqual(outcome.error?.code, undefined);
+  assert.notEqual(outcome.error.code, "ENOENT");
+});
+
+test("preview port parsing accepts one usable TCP port and nothing else", () => {
+  assert.equal(previewPort(), 4173);
+  assert.equal(previewPort("8080"), 8080);
+  assert.equal(previewPort("65535"), 65535);
+
+  for (const value of ["", "0", "abc", "65536", "-1", "8080.5", " 8080", "0x1f90"]) {
+    assert.throws(() => previewPort(value), {
+      name: "TypeError",
+      message: `PORT must be an integer from 1 to 65535, not "${value}"`,
+    });
+  }
+});
+
 test("smoke: PORT gives the build and the preview server one origin", {
   concurrency: false,
 }, async t => {
@@ -952,14 +1024,13 @@ test("smoke: PORT gives the build and the preview server one origin", {
       await once(preview, "exit");
     }
   });
-  preview.stdout.setEncoding("utf8");
-  const [announcement] = await Promise.race([
-    once(preview.stdout, "data"),
+  const announcement = await Promise.race([
+    firstOutputLine(preview.stdout),
     once(preview, "exit").then(([code]) => {
       throw new Error(`preview server exited with ${code}`);
     }),
   ]);
-  assert.equal(announcement.trim(), `Serving out/ at http://127.0.0.1:${port}/`);
+  assert.equal(announcement, `Serving out/ at http://127.0.0.1:${port}/`);
 
   const home = await httpRequest({ hostname: "127.0.0.1", port, path: "/" });
   assert.equal(home.statusCode, 200);
@@ -976,6 +1047,36 @@ test("smoke: PORT gives the build and the preview server one origin", {
     });
     assert.equal(response.statusCode, 200, link);
   }
+});
+
+test("smoke: an unusable PORT stops the build and the preview server alike", {
+  concurrency: false,
+}, async t => {
+  const workspace = await temporaryCommandWorkspace(t);
+  const environment = { ...process.env };
+  delete environment.SITE_URL;
+
+  for (const value of ["0", "abc", "", "65536"]) {
+    for (const command of ["site.mjs", "serve.mjs"]) {
+      const label = `${command} PORT="${value}"`;
+      const child = spawn(process.execPath, [join(workspace.rootDir, command)], {
+        env: { ...environment, PORT: value },
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      child.stderr.setEncoding("utf8");
+      let reported = "";
+      child.stderr.on("data", chunk => { reported += chunk; });
+
+      assert.deepEqual(await once(child, "close"), [1, null], label);
+      assert.equal(
+        reported,
+        `PORT must be an integer from 1 to 65535, not "${value}"\n`,
+        label,
+      );
+    }
+  }
+
+  await assert.rejects(() => lstat(workspace.outputDir), { code: "ENOENT" });
 });
 
 test("smoke: CONNECT receives the fixed method-not-allowed response", async t => {
