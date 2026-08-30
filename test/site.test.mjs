@@ -783,6 +783,16 @@ async function unusedLoopbackPort() {
   return port;
 }
 
+async function temporaryCommandWorkspace(t) {
+  const workspace = await temporaryPublisher(t);
+  const rootUrl = new URL("../", import.meta.url);
+  const modules = (await readdir(rootUrl)).filter(name => name.endsWith(".mjs"));
+  await Promise.all(modules.map(
+    name => cp(new URL(name, rootUrl), join(workspace.rootDir, name)),
+  ));
+  return workspace;
+}
+
 test("smoke: serves only public routes and denies unsafe request targets", async t => {
   const workspace = await temporaryPublisher(t);
   await buildSite({
@@ -865,6 +875,106 @@ test("smoke: serves only public routes and denies unsafe request targets", async
     assert.equal(response.body, expectedBody, path);
     assert.match(response.headers["content-type"], /text\/plain/);
     assert.equal(response.headers["x-content-type-options"], "nosniff");
+  }
+});
+
+test("smoke: serves every generated development page and nothing beside them", async t => {
+  const workspace = await temporaryPublisher(t);
+  const second = changed(value => {
+    value.development_id = "dev-demo-002";
+    value.title = "Second demonstration source";
+  });
+  const secondPath = join(
+    workspace.rootDir,
+    "content",
+    "developments",
+    second.development_id,
+    "development.json",
+  );
+  await mkdir(dirname(secondPath), { recursive: true });
+  await writeFile(secondPath, `${JSON.stringify(second, null, 2)}\n`);
+  await buildSite({
+    rootDir: workspace.rootDir,
+    siteUrl: "http://127.0.0.1:4173/",
+  });
+
+  const server = await startServer({
+    rootDir: workspace.outputDir,
+    hostname: "127.0.0.1",
+    port: 0,
+  });
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const { port } = server.address();
+
+  for (const record of [fixture, second]) {
+    const response = await httpRequest({
+      hostname: "127.0.0.1",
+      port,
+      path: `/developments/${record.development_id}/`,
+    });
+    assert.equal(response.statusCode, 200, record.development_id);
+    assert.match(response.headers["content-type"], /text\/html/);
+    assert.match(response.body, new RegExp(record.title));
+  }
+
+  for (const path of [
+    "/developments/dev-demo-002/index.html",
+    "/developments/dev-demo-003/",
+    "/developments/",
+  ]) {
+    const response = await httpRequest({ hostname: "127.0.0.1", port, path });
+    assert.equal(response.statusCode, 404, path);
+    assert.equal(response.body, "Not found\n", path);
+  }
+});
+
+test("smoke: PORT gives the build and the preview server one origin", {
+  concurrency: false,
+}, async t => {
+  const workspace = await temporaryCommandWorkspace(t);
+  const port = await unusedLoopbackPort();
+  const environment = { ...process.env, PORT: String(port) };
+  delete environment.SITE_URL;
+
+  const build = spawn(process.execPath, [join(workspace.rootDir, "site.mjs")], {
+    env: environment,
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  assert.deepEqual(await once(build, "exit"), [0, null]);
+
+  const preview = spawn(process.execPath, [join(workspace.rootDir, "serve.mjs")], {
+    env: environment,
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  t.after(async () => {
+    preview.kill();
+    if (preview.exitCode === null && preview.signalCode === null) {
+      await once(preview, "exit");
+    }
+  });
+  preview.stdout.setEncoding("utf8");
+  const [announcement] = await Promise.race([
+    once(preview.stdout, "data"),
+    once(preview, "exit").then(([code]) => {
+      throw new Error(`preview server exited with ${code}`);
+    }),
+  ]);
+  assert.equal(announcement.trim(), `Serving out/ at http://127.0.0.1:${port}/`);
+
+  const home = await httpRequest({ hostname: "127.0.0.1", port, path: "/" });
+  assert.equal(home.statusCode, 200);
+  const advertised = [
+    home.body.match(/<link rel="stylesheet" href="([^"]+)">/)[1],
+    home.body.match(/<h2><a href="([^"]+)">/)[1],
+  ];
+  for (const link of advertised) {
+    assert.equal(new URL(link).origin, `http://127.0.0.1:${port}`);
+    const response = await httpRequest({
+      hostname: "127.0.0.1",
+      port,
+      path: new URL(link).pathname,
+    });
+    assert.equal(response.statusCode, 200, link);
   }
 });
 
