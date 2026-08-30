@@ -21,6 +21,7 @@ import {
   isRecord,
   labelList,
   oneOf,
+  previewPort,
   text,
   timestampKey,
   utcTimestamp,
@@ -686,15 +687,16 @@ const REPOSITORY_ROOT = fileURLToPath(new URL(".", import.meta.url));
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : "";
 
 if (invokedPath === import.meta.url) {
-  const siteUrl = process.env.SITE_URL ?? "http://127.0.0.1:4173/";
-  buildSite({
-    rootDir: REPOSITORY_ROOT,
-    siteUrl,
-  }).then(
-    paths => console.log(`Built ${paths.length} files in out/`),
-    error => {
+  void (async () => {
+    try {
+      const paths = await buildSite({
+        rootDir: REPOSITORY_ROOT,
+        siteUrl: process.env.SITE_URL ?? `http://127.0.0.1:${previewPort(process.env.PORT)}/`,
+      });
+      console.log(`Built ${paths.length} files in out/`);
+    } catch (error) {
       console.error(error.message);
       process.exitCode = 1;
-    },
-  );
+    }
+  })();
 }

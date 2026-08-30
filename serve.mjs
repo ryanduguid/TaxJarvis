@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { readFile, realpath, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { extname, resolve, sep } from "node:path";
+import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { DEFAULT_PORT, previewPort } from "./validation-primitives.mjs";
 
 const ALLOWED_METHODS = new Set(["GET", "HEAD"]);
-const PUBLIC_ROUTES = new Map([
+const STATIC_ROUTES = new Map([
   ["/", "index.html"],
-  ["/developments/dev-demo-001/", "developments/dev-demo-001/index.html"],
   ["/methodology/", "methodology/index.html"],
   ["/feed.xml", "feed.xml"],
   ["/feed.json", "feed.json"],
@@ -60,9 +60,29 @@ function decodedRequestPath(requestUrl) {
   return decoded;
 }
 
-function resolveRequestPath(rootDir, requestUrl) {
+async function developmentEntries(rootDir) {
+  try {
+    return await readdir(join(rootDir, "developments"), { withFileTypes: true });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return [];
+  }
+}
+
+async function publicRoutes(rootDir) {
+  const entries = await developmentEntries(rootDir);
+  return new Map([
+    ...STATIC_ROUTES,
+    ...entries.filter(entry => entry.isDirectory()).map(entry => [
+      `/developments/${entry.name}/`,
+      `developments/${entry.name}/index.html`,
+    ]),
+  ]);
+}
+
+function resolveRequestPath(rootDir, requestUrl, routes) {
   const route = decodedRequestPath(requestUrl);
-  const relativePath = PUBLIC_ROUTES.get(route);
+  const relativePath = routes.get(route);
   const filePath = relativePath ?? (route.endsWith("/") ? `${route}index.html` : route);
 
   const rootPath = resolve(rootDir);
@@ -96,7 +116,7 @@ function sendConnectResponse(socket) {
   ].join("\r\n"));
 }
 
-function createStaticServer({ rootDir }) {
+function createStaticServer({ rootDir, routes }) {
   const rootPath = resolve(rootDir);
   const server = createServer((incoming, outgoing) => {
     void (async () => {
@@ -106,7 +126,7 @@ function createStaticServer({ rootDir }) {
       }
 
       try {
-        const { candidate, isPublicRoute } = resolveRequestPath(rootPath, incoming.url);
+        const { candidate, isPublicRoute } = resolveRequestPath(rootPath, incoming.url, routes);
         const realCandidate = await realpath(candidate);
         if (!isContained(rootPath, realCandidate)) throw new HttpPathError(403);
 
@@ -133,10 +153,13 @@ function createStaticServer({ rootDir }) {
 export async function startServer({
   rootDir,
   hostname = "127.0.0.1",
-  port = 4173,
+  port = DEFAULT_PORT,
 }) {
   const canonicalRoot = await realpath(resolve(rootDir));
-  const server = createStaticServer({ rootDir: canonicalRoot });
+  const server = createStaticServer({
+    rootDir: canonicalRoot,
+    routes: await publicRoutes(canonicalRoot),
+  });
   await new Promise((resolveListening, reject) => {
     server.once("error", reject);
     server.listen(port, hostname, resolveListening);
@@ -148,16 +171,18 @@ const REPOSITORY_ROOT = fileURLToPath(new URL(".", import.meta.url));
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : "";
 
 if (invokedPath === import.meta.url) {
-  const port = Number.parseInt(process.env.PORT ?? "4173", 10);
-  startServer({
-    rootDir: resolve(REPOSITORY_ROOT, "out"),
-    hostname: "127.0.0.1",
-    port,
-  }).then(
-    () => console.log(`Serving out/ at http://127.0.0.1:${port}/`),
-    error => {
+  void (async () => {
+    try {
+      const port = previewPort(process.env.PORT);
+      await startServer({
+        rootDir: resolve(REPOSITORY_ROOT, "out"),
+        hostname: "127.0.0.1",
+        port,
+      });
+      console.log(`Serving out/ at http://127.0.0.1:${port}/`);
+    } catch (error) {
       console.error(error.message);
       process.exitCode = 1;
-    },
-  );
+    }
+  })();
 }
