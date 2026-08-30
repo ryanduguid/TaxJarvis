@@ -12,7 +12,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { validateCanonicalDevelopmentV2 } from "./evidence-bundle.mjs";
 import { validateLiveDevelopmentV2 } from "./live-evidence.mjs";
-import { previewPort } from "./serve.mjs";
 import { parseStrictJsonBytes } from "./strict-json.mjs";
 import {
   exactKeys,
@@ -22,6 +21,7 @@ import {
   isRecord,
   labelList,
   oneOf,
+  previewPort,
   text,
   timestampKey,
   utcTimestamp,
@@ -689,10 +689,9 @@ const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).hr
 if (invokedPath === import.meta.url) {
   void (async () => {
     try {
-      const port = previewPort(process.env.PORT);
       const paths = await buildSite({
         rootDir: REPOSITORY_ROOT,
-        siteUrl: process.env.SITE_URL ?? `http://127.0.0.1:${port}/`,
+        siteUrl: process.env.SITE_URL ?? `http://127.0.0.1:${previewPort(process.env.PORT)}/`,
       });
       console.log(`Built ${paths.length} files in out/`);
     } catch (error) {

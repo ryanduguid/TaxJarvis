@@ -3,9 +3,9 @@ import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { DEFAULT_PORT, previewPort } from "./validation-primitives.mjs";
 
 const ALLOWED_METHODS = new Set(["GET", "HEAD"]);
-const DEFAULT_PORT = 4173;
 const STATIC_ROUTES = new Map([
   ["/", "index.html"],
   ["/methodology/", "methodology/index.html"],
@@ -148,14 +148,6 @@ function createStaticServer({ rootDir, routes }) {
   });
   server.on("connect", (_incoming, socket) => sendConnectResponse(socket));
   return server;
-}
-
-export function previewPort(value = String(DEFAULT_PORT)) {
-  const port = /^\d+$/.test(value) ? Number(value) : Number.NaN;
-  if (!(port >= 1 && port <= 65535)) {
-    throw new TypeError(`PORT must be an integer from 1 to 65535, not "${value}"`);
-  }
-  return port;
 }
 
 export async function startServer({

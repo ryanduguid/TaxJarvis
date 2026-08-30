@@ -27,12 +27,13 @@ import {
   parseLiveEvidenceBundle,
   transformLiveEvidenceBundle,
 } from "../live-evidence.mjs";
-import { previewPort, startServer } from "../serve.mjs";
+import { startServer } from "../serve.mjs";
 import {
   buildSite,
   renderSite,
   validateDevelopment,
 } from "../site.mjs";
+import { previewPort } from "../validation-primitives.mjs";
 
 const fixtureUrl = new URL(
   "../content/developments/dev-demo-001/development.json",
@@ -1077,6 +1078,18 @@ test("smoke: an unusable PORT stops the build and the preview server alike", {
   }
 
   await assert.rejects(() => lstat(workspace.outputDir), { code: "ENOENT" });
+});
+
+test("smoke: SITE_URL supersedes PORT, so the build ignores an unusable one", {
+  concurrency: false,
+}, async t => {
+  const workspace = await temporaryCommandWorkspace(t);
+  const build = spawn(process.execPath, [join(workspace.rootDir, "site.mjs")], {
+    env: { ...process.env, SITE_URL: "https://example.com/", PORT: "abc" },
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  assert.deepEqual(await once(build, "exit"), [0, null]);
+  await lstat(workspace.outputDir);
 });
 
 test("smoke: CONNECT receives the fixed method-not-allowed response", async t => {
