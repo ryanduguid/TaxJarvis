@@ -1488,20 +1488,29 @@ test("repository policy: generated pages contain no browser code or remote asset
 });
 
 function assertWorkflowPolicy(workflow) {
+  // The action set is fixed. The commit each action is pinned to is not,
+  // because Dependabot advances pins and its pull requests must be able to
+  // pass this check: every `uses:` must be a full 40-character commit SHA
+  // followed by a version comment, and no action outside the set may appear.
   const expectedActions = [
-    "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
-    "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
-    "actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
-    "actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
-    "actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b",
-    "actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b",
-    "actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128",
+    "actions/checkout",
+    "actions/checkout",
+    "actions/setup-node",
+    "actions/setup-node",
+    "actions/configure-pages",
+    "actions/upload-pages-artifact",
+    "actions/deploy-pages",
   ].toSorted();
-  const actualActions = [...workflow.matchAll(/^\s*(?:-\s*)?uses:\s+([^\s#]+)(?:\s+#.*)?$/gm)]
-    .map(([, action]) => action)
-    .toSorted();
+  const usesLines = [
+    ...workflow.matchAll(/^\s*(?:-\s*)?uses:\s+(\S+)(?:[ \t]+#[ \t]*(\S*))?[ \t]*$/gm),
+  ];
+  const actualActions = usesLines.map(([, ref]) => ref.split("@")[0]).toSorted();
 
   assert.deepEqual(actualActions, expectedActions);
+  for (const [line, ref, comment] of usesLines) {
+    assert.match(ref, /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+@[0-9a-f]{40}$/, line.trim());
+    assert.match(comment ?? "", /^v\d+(?:\.\d+){0,2}$/, line.trim());
+  }
   assert.match(workflow, /pull_request:/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /branches:\s*\n\s+- main/);
@@ -1544,22 +1553,34 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     "id-token: write",
     "needs: validate",
     "github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'",
-    "uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
-    "uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
-    "uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
+    "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+    "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+    "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0",
     "package-manager-cache: false",
-    "uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
+    "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0",
     "package-manager-cache: false",
-    "uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b",
-    "uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b",
-    "uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128",
+    "uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0",
+    "uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0",
+    "uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1",
   ].join("\n");
 
   assert.doesNotThrow(() => assertWorkflowPolicy(approvedWorkflow));
   for (const mutation of [
     approvedWorkflow.replace(
-      "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
-      "actions/checkout@v5",
+      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+      "actions/checkout@v7",
+    ),
+    approvedWorkflow.replace(
+      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+    ),
+    approvedWorkflow.replace(
+      "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1",
+      "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # main",
+    ),
+    approvedWorkflow.replace(
+      "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1",
+      "someone-else/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1",
     ),
     `${approvedWorkflow}\n- uses: actions/cache@v4`,
     `${approvedWorkflow}\ncache: npm`,
