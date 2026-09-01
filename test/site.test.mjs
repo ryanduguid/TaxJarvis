@@ -1501,15 +1501,20 @@ function assertWorkflowPolicy(workflow) {
     "actions/upload-pages-artifact",
     "actions/deploy-pages",
   ].toSorted();
-  const usesLines = [
-    ...workflow.matchAll(/^\s*(?:-\s*)?uses:\s+(\S+)(?:[ \t]+#[ \t]*(\S*))?[ \t]*$/gm),
-  ];
-  const actualActions = usesLines.map(([, ref]) => ref.split("@")[0]).toSorted();
+  // Discover every `uses:` line first, whatever follows the reference, so an
+  // entry with an unexpected comment cannot drop out of the comparison.
+  const entries = [...workflow.matchAll(/^\s*(?:-\s*)?uses:\s+(.+?)\s*$/gm)].map(
+    ([line, rest]) => {
+      const [ref, ...commentParts] = rest.split("#");
+      return { line: line.trim(), ref: ref.trim(), comment: commentParts.join("#").trim() };
+    },
+  );
+  const actualActions = entries.map(({ ref }) => ref.split("@")[0]).toSorted();
 
   assert.deepEqual(actualActions, expectedActions);
-  for (const [line, ref, comment] of usesLines) {
-    assert.match(ref, /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+@[0-9a-f]{40}$/, line.trim());
-    assert.match(comment ?? "", /^v\d+(?:\.\d+){0,2}$/, line.trim());
+  for (const { line, ref, comment } of entries) {
+    assert.match(ref, /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+@[0-9a-f]{40}$/, line);
+    assert.match(comment, /^v\d+(?:\.\d+){0,2}$/, line);
   }
   assert.match(workflow, /pull_request:/);
   assert.match(workflow, /workflow_dispatch:/);
@@ -1581,6 +1586,12 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     approvedWorkflow.replace(
       "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1",
       "someone-else/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1",
+    ),
+    `${approvedWorkflow}\n- uses: evil/action@0123456789abcdef0123456789abcdef01234567 # v1 unsafe`,
+    `${approvedWorkflow}\n- uses: evil/action@0123456789abcdef0123456789abcdef01234567 # v1`,
+    approvedWorkflow.replace(
+      "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1",
+      "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1 pinned by hand",
     ),
     `${approvedWorkflow}\n- uses: actions/cache@v4`,
     `${approvedWorkflow}\ncache: npm`,
