@@ -370,6 +370,26 @@ test("rendering accepts HTTPS and loopback site URLs only", () => {
   }
 });
 
+test("every page declares its canonical URL, both feeds and Open Graph identity", () => {
+  const siteUrl = "https://publisher.example/project/";
+  const files = renderSite([fixture], { siteUrl, cssText: "" });
+  const pages = {
+    "index.html": `${siteUrl}`,
+    "methodology/index.html": `${siteUrl}methodology/`,
+    "developments/dev-demo-001/index.html": `${siteUrl}developments/dev-demo-001/`,
+  };
+  for (const [file, pageUrl] of Object.entries(pages)) {
+    const html = files.get(file);
+    assert.match(html, new RegExp(`<link rel="canonical" href="${pageUrl}">`));
+    assert.match(html, new RegExp(`<meta property="og:url" content="${pageUrl}">`));
+    assert.match(html, new RegExp(`<link rel="alternate" type="application/rss\\+xml" title="TaxJarvis" href="${siteUrl}feed.xml">`));
+    assert.match(html, new RegExp(`<link rel="alternate" type="application/feed\\+json" title="TaxJarvis" href="${siteUrl}feed.json">`));
+    assert.match(html, /<meta property="og:title" content="[^"]+">/);
+  }
+  assert.match(files.get("index.html"), /<meta name="description" content="This vertical slice contains only non-production fixtures and no AI explanation.">/);
+  assert.doesNotMatch(files.get("index.html"), /content="">/);
+});
+
 test("rendering projects one identity, mode and three statuses to every format", () => {
   const files = renderSite([fixture], {
     siteUrl: "https://publisher.example/project/",
