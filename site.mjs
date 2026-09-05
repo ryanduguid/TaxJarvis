@@ -357,10 +357,16 @@ function statusList(record) {
     </dl>`;
 }
 
-function layout({ title, body, siteUrl }) {
+function layout({ title, body, siteUrl, path = "/", description = null }) {
   const homeUrl = absoluteUrl(siteUrl, "/");
   const methodologyUrl = absoluteUrl(siteUrl, "/methodology/");
   const cssUrl = absoluteUrl(siteUrl, "/assets/site.css");
+  const pageUrl = absoluteUrl(siteUrl, path);
+  const descriptionTags = description === null
+    ? ""
+    : `
+  <meta name="description" content="${escapeHtml(description)}">
+  <meta property="og:description" content="${escapeHtml(description)}">`;
   return `<!doctype html>
 <html lang="en-AU">
 <head>
@@ -368,6 +374,13 @@ function layout({ title, body, siteUrl }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>${escapeHtml(title)} | ${SITE_NAME}</title>
+  <link rel="canonical" href="${escapeHtml(pageUrl)}">
+  <link rel="alternate" type="application/rss+xml" title="${SITE_NAME}" href="${escapeHtml(absoluteUrl(siteUrl, "/feed.xml"))}">
+  <link rel="alternate" type="application/feed+json" title="${SITE_NAME}" href="${escapeHtml(absoluteUrl(siteUrl, "/feed.json"))}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="${SITE_NAME}">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:url" content="${escapeHtml(pageUrl)}">${descriptionTags}
   <link rel="stylesheet" href="${escapeHtml(cssUrl)}">
 </head>
 <body>
@@ -414,14 +427,18 @@ function renderHome(records, siteUrl) {
   }).join("");
 
   const containsLive = records.some(record => record.mode === "live");
+  const heroText = containsLive
+    ? "Validated source developments, with no AI explanation published in this stage."
+    : "This vertical slice contains only non-production fixtures and no AI explanation.";
   return layout({
     title: "Recent developments",
     siteUrl,
+    description: heroText,
     body: `
       <section class="hero">
         <p class="eyebrow">${containsLive ? "Source-only tax intelligence" : "Source-only demonstration"}</p>
         <h1>Australian tax and accounting developments</h1>
-        <p>${containsLive ? "Validated source developments, with no AI explanation published in this stage." : "This vertical slice contains only non-production fixtures and no AI explanation."}</p>
+        <p>${heroText}</p>
       </section>
       <section aria-labelledby="recent"><h2 id="recent">Recent developments</h2>${items}</section>`,
   });
@@ -459,6 +476,8 @@ function renderDevelopment(record, siteUrl) {
     return layout({
       title: live.headline,
       siteUrl,
+      path: `/developments/${record.development_id}/`,
+      description: live.claim,
       body: `
       <article>
         <p class="eyebrow">${escapeHtml(recordLabel(record.mode))}</p>
@@ -490,6 +509,7 @@ function renderDevelopment(record, siteUrl) {
   return layout({
     title: record.title,
     siteUrl,
+    path: `/developments/${record.development_id}/`,
     body: `
       <article>
         <p class="eyebrow">${escapeHtml(recordLabel(record.mode))}</p>
@@ -534,6 +554,8 @@ function renderMethodology(siteUrl, containsLive) {
   return layout({
     title: "Methodology",
     siteUrl,
+    path: "/methodology/",
+    description: coverageStatement,
     body: `
       <article class="prose">
         <p class="eyebrow">Methodology</p>
