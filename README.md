@@ -1,8 +1,27 @@
-# TaxJarvis
+# TaxJarvis: inspect a source record before drawing a conclusion
 
-This repository is a non-production source-only demonstration for a future public service covering Australian tax and accounting developments for practising accountants and tax agents.
+Synthetic, non-production source-only demonstration. Review aid, not professional advice; a practitioner must check the source and decide its relevance.
 
-It contains one artificial public demonstration record. No live record has been admitted. It has no hosted source monitor, automatic or unattended publication, AI explainer or deployment, and it does not provide tax advice or replace source checking and professional judgement.
+**Input:** [dev-demo-001](content/developments/dev-demo-001/development.json), the existing artificial development record. Its publisher and source URL are deliberately fictional.
+
+```bash
+npm run build
+```
+
+**Output:** the static site under `out/`, with HTML, RSS and JSON projections of the same record.
+
+| Record field | Demonstration value | What the reader can conclude |
+| --- | --- | --- |
+| Publication status | `source-only` | This is a source record, not an impact explanation. |
+| Effective date | `null` | No commencement date is established. |
+| Fixture | `true` | This is synthetic evidence, not a live tax development. |
+
+Review question: what primary source and effective date would I need before changing a workpaper or advising on a development?
+
+No live record has been admitted. The demo does not establish a hosted monitoring service or client use.
+
+<details>
+<summary>Requirements, publication model, admission boundaries and licensing</summary>
 
 ## Requirements
 
@@ -53,3 +72,5 @@ Outside contributions are not accepted during this vertical slice. Contribution,
 ## Licensing
 
 Original code is licensed under AGPL-3.0-only. Content, factual data, third-party material and marks have separate terms in `CONTENT-LICENCE.md`.
+
+</details>
