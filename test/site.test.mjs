@@ -1509,7 +1509,6 @@ test("repository policy: licences, documentation and static-only styling are exp
   assert.doesNotMatch(css, /border-radius\s*:/i);
   assert.match(css, /:focus-visible/);
   assert.match(readme, /non-production source-only demonstration/i);
-  assert.match(readme, /npm run check/);
   assert.match(readme, /npm run lint/);
   assert.match(contentLicence, /CC BY 4\.0/);
   assert.match(contentLicence, /CC0/);
@@ -1569,10 +1568,10 @@ function assertWorkflowPolicy(workflow) {
   assert.match(workflow, /pull_request:/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /branches:\s*\n\s+- main/);
-  assert.match(workflow, /npm run check/);
   assert.match(workflow, /npm run smoke/);
   // Only the validate job may install packages, only with `npm ci` from the
-  // committed lockfile, only once, and only so that lint runs before check.
+  // committed lockfile, only once, and only so that lint runs before the
+  // build, the full suite and smoke.
   // The publish job stays installation-free.
   const publishIndex = workflow.search(/^\s*publish:\s*$/m);
   assert.notEqual(publishIndex, -1);
@@ -1583,10 +1582,12 @@ function assertWorkflowPolicy(workflow) {
   assert.equal((workflow.match(/\bnpm\s+ci\b/gi) ?? []).length, 1);
   const installIndex = validateJob.search(/^\s*run:\s*npm ci\s*$/m);
   const lintIndex = validateJob.search(/npm run lint/);
-  const checkIndex = validateJob.search(/npm run check/);
+  const buildTestIndex = validateJob.search(/npm run build && npm test/);
+  const smokeIndex = validateJob.search(/npm run smoke/);
   assert.notEqual(installIndex, -1);
   assert.notEqual(lintIndex, -1);
-  assert.ok(installIndex < lintIndex && lintIndex < checkIndex);
+  assert.notEqual(buildTestIndex, -1);
+  assert.ok(installIndex < lintIndex && lintIndex < buildTestIndex && buildTestIndex < smokeIndex);
   assert.match(workflow, /SITE_URL: \$\{\{ steps\.pages\.outputs\.base_url \}\}/);
   assert.match(workflow, /pages: write/);
   assert.match(workflow, /id-token: write/);
@@ -1622,7 +1623,7 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     "package-manager-cache: false",
     "run: npm ci",
     "run: npm run lint",
-    "run: npm run check",
+    "run: npm run build && npm test",
     "run: npm run smoke",
     "publish:",
     "needs: validate",
@@ -1675,7 +1676,9 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     approvedWorkflow.replace("run: npm ci\n", ""),
     approvedWorkflow.replace("run: npm run lint\n", ""),
     approvedWorkflow.replace("run: npm ci\nrun: npm run lint\n", "run: npm run lint\nrun: npm ci\n"),
-    approvedWorkflow.replace("run: npm run lint\nrun: npm run check\n", "run: npm run check\nrun: npm run lint\n"),
+    approvedWorkflow.replace("run: npm run lint\nrun: npm run build && npm test\n", "run: npm run build && npm test\nrun: npm run lint\n"),
+    approvedWorkflow.replace("run: npm run build && npm test\nrun: npm run smoke\n", "run: npm run smoke\nrun: npm run build && npm test\n"),
+    approvedWorkflow.replace("run: npm run build && npm test\n", ""),
     `${approvedWorkflow}\ncontinue-on-error: true`,
   ]) {
     assert.throws(() => assertWorkflowPolicy(mutation), assert.AssertionError);
