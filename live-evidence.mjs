@@ -305,12 +305,19 @@ function integer(errors, value, path, minimum, maximum) {
   return value;
 }
 
+function isAscii(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) > 0x7f) return false;
+  }
+  return true;
+}
+
 function semver(errors, value, path) {
   if (
     typeof value !== "string" ||
     value.length < 1 ||
     value.length > 100 ||
-    !/^[\x00-\x7f]+$/.test(value) ||
+    !isAscii(value) ||
     matchEntire(SEMVER, value) === null
   ) {
     addError(errors, path, "must be strict Semantic Version 2.0.0 text");
