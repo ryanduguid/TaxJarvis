@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import assert from "node:assert/strict";
-import { globSync } from "node:fs";
 import {
   copyFile,
   lstat,
@@ -224,28 +223,6 @@ test("package command has no legacy or configurable-root route", async () => {
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
   );
   assert.equal(packageJson.scripts["import-bundle"], "node import-live.mjs");
-  // `npm run check` syntax-checks every module the check-syntax script
-  // discovers, so the live modules must fall inside its glob patterns.
-  assert.match(packageJson.scripts.check, /^node scripts\/check-syntax\.mjs && /);
-  const checkSyntax = await readFile(new URL("../scripts/check-syntax.mjs", import.meta.url), "utf8");
-  const patterns = ["*.mjs", "test/*.mjs"];
-  for (const pattern of patterns) {
-    assert.ok(checkSyntax.includes(JSON.stringify(pattern)), pattern);
-  }
-  const covered = globSync(patterns, {
-    cwd: fileURLToPath(new URL("../", import.meta.url)),
-  }).map(path => path.replaceAll("\\", "/"));
-  for (const path of [
-    "live-evidence.mjs",
-    "live-provenance.mjs",
-    "live-import-internals.mjs",
-    "import-live.mjs",
-    "test/live-evidence.test.mjs",
-    "test/live-provenance.test.mjs",
-    "test/import-live.test.mjs",
-  ]) {
-    assert.ok(covered.includes(path), path);
-  }
   const ignoreLines = (await readFile(new URL("../.gitignore", import.meta.url), "utf8"))
     .split(/\r?\n/)
     .filter(Boolean);

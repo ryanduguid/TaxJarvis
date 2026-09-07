@@ -117,21 +117,12 @@ function ordinaryFile(details) {
 
 function selectedOperations(overrides) {
   if (overrides === undefined) return DEFAULT_OPERATIONS;
-  if (overrides === null || typeof overrides !== "object" || Array.isArray(overrides)) {
-    fail("live import request is invalid");
-  }
-  let entries;
-  try {
-    entries = Object.entries(overrides);
-  } catch {
-    fail("live import request is invalid");
-  }
-  for (const [name, operation] of entries) {
+  for (const [name, operation] of Object.entries(overrides)) {
     if (!OPERATION_NAMES.has(name) || typeof operation !== "function") {
       fail("live import request is invalid");
     }
   }
-  return Object.freeze({ ...DEFAULT_OPERATIONS, ...Object.fromEntries(entries) });
+  return Object.freeze({ ...DEFAULT_OPERATIONS, ...overrides });
 }
 
 function readRequest(input) {

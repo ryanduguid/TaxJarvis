@@ -38,7 +38,6 @@ Authenticated live evidence admission is supported only on Windows and additiona
 - `npm run import-bundle -- --bundle <file>` authenticates and admits one live-v2 evidence bundle under the rules below.
 - `npm test` runs the complete Node test suite and prints a coverage summary.
 - `npm run lint` runs ESLint with the recommended rules (after `npm ci`).
-- `npm run check` syntax-checks every `*.mjs` and `test/*.mjs` file, builds and tests.
 - `npm run smoke` exercises the exported routes over loopback HTTP.
 
 ## Publication model
@@ -50,7 +49,7 @@ also use strict UTF-8 and duplicate-member rejection during every build.
 
 ### Authenticated live admission
 
-The supported wrapper fixes both the repository root and the `content/developments` destination. It accepts only the exact `--bundle <file>` argument and has no supported content-root, mode, provenance-skip, offline, overwrite or retry option. Direct execution of `import.mjs` refuses before parsing input or mutating content. Its exported v1 import function remains only for isolated conformance tests and is not a supported production entry point.
+The supported wrapper fixes both the repository root and the `content/developments` destination. It accepts only the exact `--bundle <file>` argument and has no supported content-root, mode, provenance-skip, offline, overwrite or retry option.
 
 Before semantic admission, the wrapper places a private snapshot of the received bytes under `content/.live-import-*` and runs three GitHub checks against `ryanduguid/au-tax-legislation-corpus`:
 
