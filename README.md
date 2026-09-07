@@ -27,7 +27,7 @@ No live record has been admitted. The demo does not establish a hosted monitorin
 
 - Node.js 24.19.0 or later
 - npm 11.17.0 or later
-- no package installation
+- no package installation to build, test or publish; `npm ci` installs ESLint for `npm run lint` only
 
 Authenticated live evidence admission is supported only on Windows and additionally requires GitHub CLI 2.98.0 or later, authenticated for GitHub.
 
@@ -36,8 +36,9 @@ Authenticated live evidence admission is supported only on Windows and additiona
 - `npm run dev` builds once and serves `out/` at `http://127.0.0.1:4173/`.
 - `npm run build` creates the static artifact.
 - `npm run import-bundle -- --bundle <file>` authenticates and admits one live-v2 evidence bundle under the rules below.
-- `npm test` runs the complete Node test suite.
-- `npm run check` performs syntax checks, builds and tests.
+- `npm test` runs the complete Node test suite and prints a coverage summary.
+- `npm run lint` runs ESLint with the recommended rules (after `npm ci`).
+- `npm run check` syntax-checks every `*.mjs` and `test/*.mjs` file, builds and tests.
 - `npm run smoke` exercises the exported routes over loopback HTTP.
 
 ## Publication model

@@ -57,15 +57,38 @@ const parsedLiveBundleFixture = parseLiveEvidenceBundle(
 );
 const liveFixture = transformLiveEvidenceBundle(parsedLiveBundleFixture);
 
-test("repository contract: package has no package graph", async () => {
+// The only permitted package graph is the pinned lint tooling. Build, test,
+// import and publication stay dependency-free.
+const LINT_DEV_DEPENDENCIES = ["@eslint/js", "eslint", "globals"];
+
+test("repository contract: package has no runtime graph and pins its lint tooling", async () => {
   const packageJson = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  const lockfile = JSON.parse(
+    await readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   );
   assert.equal(packageJson.type, "module");
   assert.equal(packageJson.engines.node, ">=24.19.0");
   assert.equal(packageJson.engines.npm, ">=11.17.0");
+  assert.equal(packageJson.packageManager, "npm@11.17.0");
   assert.equal(Object.hasOwn(packageJson, "dependencies"), false);
-  assert.equal(Object.hasOwn(packageJson, "devDependencies"), false);
+  assert.deepEqual(Object.keys(packageJson.devDependencies).toSorted(), LINT_DEV_DEPENDENCIES);
+  for (const [name, version] of Object.entries(packageJson.devDependencies)) {
+    assert.match(version, /^\d+\.\d+\.\d+$/, `${name} must be pinned to an exact version`);
+  }
+  assert.equal(packageJson.scripts.lint, "eslint .");
+
+  assert.equal(lockfile.lockfileVersion, 3);
+  assert.deepEqual(lockfile.packages[""].devDependencies, packageJson.devDependencies);
+  assert.equal(Object.hasOwn(lockfile.packages[""], "dependencies"), false);
+  const locked = Object.entries(lockfile.packages).filter(([path]) => path !== "");
+  assert.ok(locked.length > 0);
+  for (const [path, entry] of locked) {
+    assert.equal(entry.dev, true, `${path} must be a development-only package`);
+    assert.match(entry.resolved ?? "", /^https:\/\/registry\.npmjs\.org\//, path);
+    assert.match(entry.integrity ?? "", /^sha512-/, path);
+  }
 });
 
 test("rendering uses the TaxJarvis public identity in HTML and RSS", () => {
@@ -1462,7 +1485,7 @@ test("build does not report failure after cleanup cannot remove the old artifact
 
 test("repository policy: licences, documentation and static-only styling are explicit", async () => {
   const rootUrl = new URL("../", import.meta.url);
-  const [rootEntries, packageJson, css, readme, contentLicence, licence] =
+  const [rootEntries, packageJson, css, readme, contentLicence, licence, eslintConfig] =
     await Promise.all([
       readdir(rootUrl),
       readFile(new URL("package.json", rootUrl), "utf8").then(JSON.parse),
@@ -1470,17 +1493,24 @@ test("repository policy: licences, documentation and static-only styling are exp
       readFile(new URL("README.md", rootUrl), "utf8"),
       readFile(new URL("CONTENT-LICENCE.md", rootUrl), "utf8"),
       readFile(new URL("LICENSE", rootUrl), "utf8"),
+      readFile(new URL("eslint.config.mjs", rootUrl), "utf8"),
     ]);
 
   assert.equal(Object.hasOwn(packageJson, "dependencies"), false);
-  assert.equal(Object.hasOwn(packageJson, "devDependencies"), false);
-  assert.equal(rootEntries.some(name => /^(package-lock|npm-shrinkwrap)\.json$/.test(name)), false);
+  assert.deepEqual(Object.keys(packageJson.devDependencies).toSorted(), LINT_DEV_DEPENDENCIES);
+  assert.equal(rootEntries.includes("package-lock.json"), true);
+  assert.equal(rootEntries.includes("npm-shrinkwrap.json"), false);
+  // ESLint runs the recommended rule set only: no plugins, no extra rules.
+  assert.match(eslintConfig, /js\.configs\.recommended/);
+  assert.doesNotMatch(eslintConfig, /\bplugins\s*:/);
+  assert.doesNotMatch(eslintConfig, /\brules\s*:/);
   assert.doesNotMatch(css, /@import|url\s*\(/i);
   assert.doesNotMatch(css, /(?:animation|transition)\s*:/i);
   assert.doesNotMatch(css, /border-radius\s*:/i);
   assert.match(css, /:focus-visible/);
   assert.match(readme, /non-production source-only demonstration/i);
   assert.match(readme, /npm run check/);
+  assert.match(readme, /npm run lint/);
   assert.match(contentLicence, /CC BY 4\.0/);
   assert.match(contentLicence, /CC0/);
   assert.match(contentLicence, /Third-party source material/);
@@ -1541,6 +1571,22 @@ function assertWorkflowPolicy(workflow) {
   assert.match(workflow, /branches:\s*\n\s+- main/);
   assert.match(workflow, /npm run check/);
   assert.match(workflow, /npm run smoke/);
+  // Only the validate job may install packages, only with `npm ci` from the
+  // committed lockfile, only once, and only so that lint runs before check.
+  // The publish job stays installation-free.
+  const publishIndex = workflow.search(/^\s*publish:\s*$/m);
+  assert.notEqual(publishIndex, -1);
+  const validateJob = workflow.slice(0, publishIndex);
+  const publishJob = workflow.slice(publishIndex);
+  assert.doesNotMatch(workflow, /\bnpm\s+install\b/i);
+  assert.doesNotMatch(publishJob, /\bnpm\s+ci\b/i);
+  assert.equal((workflow.match(/\bnpm\s+ci\b/gi) ?? []).length, 1);
+  const installIndex = validateJob.search(/^\s*run:\s*npm ci\s*$/m);
+  const lintIndex = validateJob.search(/npm run lint/);
+  const checkIndex = validateJob.search(/npm run check/);
+  assert.notEqual(installIndex, -1);
+  assert.notEqual(lintIndex, -1);
+  assert.ok(installIndex < lintIndex && lintIndex < checkIndex);
   assert.match(workflow, /SITE_URL: \$\{\{ steps\.pages\.outputs\.base_url \}\}/);
   assert.match(workflow, /pages: write/);
   assert.match(workflow, /id-token: write/);
@@ -1554,7 +1600,6 @@ function assertWorkflowPolicy(workflow) {
     2,
   );
   assert.doesNotMatch(workflow, /^\s*cache\s*:/mi);
-  assert.doesNotMatch(workflow, /\bnpm\s+(?:ci|install)\b/i);
   assert.doesNotMatch(workflow, /^\s*continue-on-error\s*:/mi);
 }
 
@@ -1571,20 +1616,24 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     "pull_request:",
     "workflow_dispatch:",
     "branches:\n  - main",
-    "npm run check",
-    "npm run smoke",
-    "SITE_URL: ${{ steps.pages.outputs.base_url }}",
-    "pages: write",
-    "id-token: write",
-    "needs: validate",
-    "github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'",
-    "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+    "validate:",
     "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
     "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0",
     "package-manager-cache: false",
+    "run: npm ci",
+    "run: npm run lint",
+    "run: npm run check",
+    "run: npm run smoke",
+    "publish:",
+    "needs: validate",
+    "github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'",
+    "pages: write",
+    "id-token: write",
+    "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
     "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0",
     "package-manager-cache: false",
     "uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0",
+    "SITE_URL: ${{ steps.pages.outputs.base_url }}",
     "uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0",
     "uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1",
   ].join("\n");
@@ -1621,6 +1670,12 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
       "github.event_name != 'pull_request'",
     ),
     `${approvedWorkflow}\nrun: npm   install`,
+    approvedWorkflow.replace("run: npm ci", "run: npm install"),
+    `${approvedWorkflow}\nrun: npm ci`,
+    approvedWorkflow.replace("run: npm ci\n", ""),
+    approvedWorkflow.replace("run: npm run lint\n", ""),
+    approvedWorkflow.replace("run: npm ci\nrun: npm run lint\n", "run: npm run lint\nrun: npm ci\n"),
+    approvedWorkflow.replace("run: npm run lint\nrun: npm run check\n", "run: npm run check\nrun: npm run lint\n"),
     `${approvedWorkflow}\ncontinue-on-error: true`,
   ]) {
     assert.throws(() => assertWorkflowPolicy(mutation), assert.AssertionError);
