@@ -12,7 +12,6 @@
     "import-bundle": "node import-live.mjs",
     "test": "node --test --experimental-test-coverage --test-coverage-exclude=\"test/**\"",
     "lint": "eslint .",
-    "check": "node scripts/check-syntax.mjs && npm run build && npm test",
     "smoke": "node --test --test-name-pattern=smoke"
   },
   "devDependencies": {

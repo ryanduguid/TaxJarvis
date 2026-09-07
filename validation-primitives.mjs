@@ -38,7 +38,7 @@ export function isXmlText(value) {
       codePoint !== 0x0d &&
       (codePoint < 0x20 || codePoint > 0xd7ff) &&
       (codePoint < 0xe000 || codePoint > 0xfffd) &&
-      (codePoint < 0x10000 || codePoint > 0x10ffff)
+      codePoint < 0x10000
     ) return false;
   }
   return true;

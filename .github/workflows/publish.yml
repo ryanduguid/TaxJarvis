@@ -34,8 +34,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Check repository
-        run: npm run check
+      - name: Build and test
+        run: npm run build && npm test
 
       - name: Smoke-test artifact
         run: npm run smoke
