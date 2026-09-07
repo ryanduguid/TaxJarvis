@@ -10,7 +10,9 @@ export default defineConfig([
     files: ["**/*.mjs"],
     extends: [js.configs.recommended],
     languageOptions: {
-      ecmaVersion: 2024,
+      // Let the pinned ESLint release decide the newest final syntax it can
+      // parse, so a module that Node 24 runs is never rejected by the linter.
+      ecmaVersion: "latest",
       sourceType: "module",
       globals: {
         ...globals.node,
