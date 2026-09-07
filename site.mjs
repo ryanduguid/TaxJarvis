@@ -110,9 +110,9 @@ async function loadDevelopments({ contentDir }) {
     contentEntries = await readdir(contentDir, { withFileTypes: true });
   } catch (error) {
     if (error.code === "ENOENT") {
-      throw new Error("Development content directory is missing");
+      throw new Error("Development content directory is missing", { cause: error });
     }
-    throw new Error("Development content directory cannot be read");
+    throw new Error("Development content directory cannot be read", { cause: error });
   }
   const entries = contentEntries
     .filter(entry => entry.isDirectory())
@@ -130,9 +130,9 @@ async function loadDevelopments({ contentDir }) {
       source = await readFile(recordPath);
     } catch (error) {
       if (error.code === "ENOENT") {
-        throw new Error("A development record file is missing");
+        throw new Error("A development record file is missing", { cause: error });
       }
-      throw new Error("A development record file cannot be read");
+      throw new Error("A development record file cannot be read", { cause: error });
     }
     let input;
     try {
@@ -168,7 +168,7 @@ async function outputExists(outputDir) {
     information = await lstat(outputDir);
   } catch (error) {
     if (error.code === "ENOENT") return false;
-    throw new Error("The out directory cannot be inspected");
+    throw new Error("The out directory cannot be inspected", { cause: error });
   }
   if (information.isSymbolicLink()) {
     throw new Error("The out directory must not be a symbolic link");
@@ -182,9 +182,9 @@ async function createPrivateDirectory(rootDir, name) {
     await mkdir(directory);
   } catch (error) {
     if (error.code === "EEXIST") {
-      throw new Error("A private build directory is already present");
+      throw new Error("A private build directory is already present", { cause: error });
     }
-    throw new Error("Unable to prepare private build output");
+    throw new Error("Unable to prepare private build output", { cause: error });
   }
   return directory;
 }
@@ -239,7 +239,7 @@ async function publishStagedOutput({ rootDir, outputDir, stagingDir }) {
     await removePrivateDirectory(backupDir);
   } catch (error) {
     if (!previousOutputMoved && !await removePrivateDirectory(backupDir)) {
-      throw new Error("Unable to clean private build output");
+      throw new Error("Unable to clean private build output", { cause: error });
     }
     throw error;
   }
@@ -698,7 +698,7 @@ export async function buildSite({ rootDir, siteUrl }) {
     });
   } catch (error) {
     if (!await removePrivateDirectory(stagingDir)) {
-      throw new Error("Unable to clean private build output");
+      throw new Error("Unable to clean private build output", { cause: error });
     }
     throw error;
   }

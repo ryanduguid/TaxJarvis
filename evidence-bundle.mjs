@@ -8,7 +8,6 @@ import {
   labelList,
   oneOf,
   text,
-  timestampKey,
   utcTimestamp,
 } from "./validation-primitives.mjs";
 import { parseStrictJsonBytes } from "./strict-json.mjs";

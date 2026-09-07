@@ -28,6 +28,12 @@ jobs:
           node-version: 24.19.0
           package-manager-cache: false
 
+      - name: Install lint dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
       - name: Check repository
         run: npm run check
 
