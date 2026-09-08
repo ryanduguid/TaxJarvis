@@ -2,19 +2,19 @@
 
 Non-production source-only demonstration with one synthetic fixture and one authenticated Federal Register metadata record. Review aid, not professional advice; a practitioner must check the source and decide its relevance.
 
-**Input:** [dev-demo-001](content/developments/dev-demo-001/development.json), the existing artificial development record. Its publisher and source URL are deliberately fictional.
+**Inputs:** the synthetic [dev-demo-001](content/developments/dev-demo-001/development.json) fixture, whose publisher and source URL are fictional, and the authenticated [Federal Register snapshot](content/developments/dev-frl-c2004a04633-c2026c00361/development.json).
 
 ```bash
 npm run build
 ```
 
-**Output:** the static site under `out/`, with HTML, RSS and JSON projections of the same record.
+**Output:** the static site under `out/`, with an HTML page for each record and both records in the index, RSS and JSON feed.
 
-| Record field | Demonstration value | What the reader can conclude |
+| Property | Synthetic fixture | Federal Register snapshot |
 | --- | --- | --- |
-| Publication status | `source-only` | This is a source record, not an impact explanation. |
-| Effective date | `null` | No commencement date is established. |
-| Fixture | `true` | This is synthetic evidence, not a live tax development. |
+| Publication status | `source-only` | `source-only` |
+| Effective date | `null`, no commencement date established | `null`, no commencement date established |
+| Evidence type | Fabricated demonstration | Authenticated metadata captured on 30 August 2026 |
 
 Review question: what primary source and effective date would I need before changing a workpaper or advising on a development?
 

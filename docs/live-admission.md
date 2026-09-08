@@ -19,6 +19,7 @@ From the repository root, download the asset into an empty directory outside
 the repository, then use its absolute path:
 
 ```powershell
+npm ci
 gh release download live-evidence-v2-497935ec1acafd3996abd2a3b748f9a29b6578b8be5ea9e28648e7040958fc06 --repo ryanduguid/au-tax-legislation-corpus --pattern bundle-frl-c2004a04633-c2026c00361-r1.json --dir <empty-directory>
 npm run import-bundle -- --bundle <absolute-path-to-bundle>
 npm run build
@@ -29,7 +30,7 @@ npm run smoke
 
 The initial import returns `imported`; an identical repeat returns `unchanged`.
 The build includes the record in the index, its development page, RSS and JSON
-Feed. The synthetic fixture remains separately labelled.
+feed. The synthetic fixture remains separately labelled.
 
 ## Evidence limits
 
