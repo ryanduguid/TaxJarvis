@@ -33,8 +33,23 @@ const DEVELOPMENT_KEYS = new Set(["schema_version", "development_id", "title", "
 const SOURCE_KEYS = new Set(["source_id", "publisher", "document_class", "title", "canonical_url", "published_at", "retrieved_at", "rights", "evidence"]);
 const RIGHTS_KEYS = new Set(["mode", "attribution", "licence_url"]);
 const REVISION_KEYS = new Set(["number", "updated_at", "change_note"]);
+const DIAGNOSTIC_FIELDS = new Set([...DEVELOPMENT_KEYS, "mode", "source_event", "upstream"]);
 
 function addError(errors, path, message) { errors.push({ path, message }); }
+
+function validationFailure(input, directoryName, errors) {
+  const identifier = isIdentifier(input?.development_id) && input.development_id === directoryName
+    ? input.development_id : "[unidentified]";
+  // Only schema-owned top-level names may reach the console; error paths can
+  // contain unknown keys supplied by the record.
+  const fields = [...new Set(errors.map(error => {
+    const field = error.path.split(/[.[]/, 1)[0];
+    return DIAGNOSTIC_FIELDS.has(field) ? `${field}: INVALID_FIELD` : "$: INVALID_RECORD";
+  }))];
+  const details = fields.slice(0, 5).join("; ");
+  const omitted = fields.length > 5 ? "; additional errors omitted" : "";
+  return new Error(`Development ${identifier} failed validation: ${details}${omitted}`);
+}
 
 function validateDevelopmentV1(input) {
   const errors = [];
@@ -142,7 +157,7 @@ async function loadDevelopments({ contentDir }) {
     }
     const result = validateDevelopment(input);
     if (!result.ok) {
-      throw new Error("A development record failed validation");
+      throw validationFailure(input, entry.name, result.errors);
     }
     if (identifiers.has(result.value.development_id)) {
       throw new Error("A development record identifier is duplicated");
@@ -298,7 +313,7 @@ function formatDate(timestamp) {
   }).format(new Date(timestamp));
 }
 
-const LIVE_CLAIM = "The Federal Register reports a newer registered current compilation for this title.";
+const LIVE_CLAIM = "At capture, the Federal Register reported a newer registered current compilation for this title.";
 
 function livePresentation(record) {
   const previousNumber = record.source_event.previous_compilation.number ??
@@ -308,12 +323,14 @@ function livePresentation(record) {
     `${record.source_event.current_compilation.date}T00:00:00Z`,
   );
   const registrationDate = formatDate(record.published_at);
+  const captureNotice = `Verified at capture on ${formatDate(record.sources[0].retrieved_at)} (UTC). Current status has not been rechecked.`;
   const officialUrl = record.sources[0].canonical_url;
   const releaseTag = `live-evidence-v2-${record.upstream.producer.observation_facts_sha256.slice("sha256:".length)}`;
   const evidenceUrl = `https://github.com/ryanduguid/au-tax-legislation-corpus/releases/tag/${releaseTag}`;
   const headline = `New compilation: ${record.title}`;
   const summary = [
     LIVE_CLAIM,
+    captureNotice,
     `Registered: ${registrationDate}`,
     `Compilation date: ${compilationDate}`,
     `Previous compilation number: ${previousNumber}`,
@@ -325,6 +342,7 @@ function livePresentation(record) {
   return {
     headline,
     claim: LIVE_CLAIM,
+    captureNotice,
     registrationDate,
     compilationDate,
     previousNumber,
@@ -376,7 +394,7 @@ function layout({ title, body, siteUrl, path = "/", description = null }) {
   <title>${escapeHtml(title)} | ${SITE_NAME}</title>
   <link rel="canonical" href="${escapeHtml(pageUrl)}">
   <link rel="alternate" type="application/rss+xml" title="${SITE_NAME}" href="${escapeHtml(absoluteUrl(siteUrl, "/feed.xml"))}">
-  <link rel="alternate" type="application/feed+json" title="${SITE_NAME}" href="${escapeHtml(absoluteUrl(siteUrl, "/feed.json"))}">
+  <link rel="alternate" type="application/json" title="${SITE_NAME}" href="${escapeHtml(absoluteUrl(siteUrl, "/feed.json"))}">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="${SITE_NAME}">
   <meta property="og:title" content="${escapeHtml(title)}">
@@ -409,6 +427,7 @@ function renderHome(records, siteUrl) {
       <p class="eyebrow">${escapeHtml(recordLabel(record.mode))}</p>
       <h2><a href="${escapeHtml(developmentUrl(siteUrl, record))}">${escapeHtml(live.headline)}</a></h2>
       <p>${escapeHtml(live.claim)}</p>
+      <p>${escapeHtml(live.captureNotice)}</p>
       <p>Registered: <time datetime="${escapeHtml(record.published_at)}">${escapeHtml(live.registrationDate)}</time> · Compilation date: <time datetime="${escapeHtml(record.source_event.current_compilation.date)}">${escapeHtml(live.compilationDate)}</time></p>
       <p>Previous compilation number: ${escapeHtml(live.previousNumber)} · Current compilation number: ${escapeHtml(live.currentNumber)}</p>
       ${statusList(record)}
@@ -477,12 +496,13 @@ function renderDevelopment(record, siteUrl) {
       title: live.headline,
       siteUrl,
       path: `/developments/${record.development_id}/`,
-      description: live.claim,
+      description: `${live.claim} ${live.captureNotice}`,
       body: `
       <article>
         <p class="eyebrow">${escapeHtml(recordLabel(record.mode))}</p>
         <h1>${escapeHtml(live.headline)}</h1>
         <p>${escapeHtml(live.claim)}</p>
+        <p>${escapeHtml(live.captureNotice)}</p>
         <p>Development ID: <code>${escapeHtml(record.development_id)}</code></p>
         <p>Registered: <time datetime="${escapeHtml(record.published_at)}">${escapeHtml(live.registrationDate)}</time> · Compilation date: <time datetime="${escapeHtml(record.source_event.current_compilation.date)}">${escapeHtml(live.compilationDate)}</time></p>
         <p>Previous compilation number: ${escapeHtml(live.previousNumber)} · Current compilation number: ${escapeHtml(live.currentNumber)}</p>

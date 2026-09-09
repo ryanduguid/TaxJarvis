@@ -10,6 +10,9 @@ npm run build
 
 **Output:** the static site under `out/`, with an HTML page for each record and both records in the index, RSS and JSON feed.
 
+The JSON endpoint uses the custom `feed.v2` schema and is advertised as
+`application/json`. Use RSS for feed-reader subscriptions.
+
 | Property | Synthetic fixture | Federal Register snapshot |
 | --- | --- | --- |
 | Publication status | `source-only` | `source-only` |
@@ -45,12 +48,25 @@ Authenticated live evidence admission is supported only on Windows and additiona
 - `npm run lint` runs ESLint with the recommended rules (after `npm ci`).
 - `npm run smoke` exercises the exported routes over loopback HTTP.
 
+CI runs the full suite on Ubuntu and Windows. Manual deployment requires both
+jobs to pass. The Windows job exercises admission and filesystem behaviour that
+Ubuntu skips.
+
 ## Publication model
 
 `content/developments/` contains the synthetic `dev-demo-001` record and the
 authenticated `dev-frl-c2004a04633-c2026c00361` record. HTML, RSS and JSON are generated projections. Invalid input
 stops the build before the current artifact is replaced. Canonical record files
 also use strict UTF-8 and duplicate-member rejection during every build.
+
+Validation errors identify the record and up to five affected top-level fields
+using `INVALID_FIELD`, or `INVALID_RECORD` for unknown fields and invalid shapes.
+Invalid or mismatched identifiers appear as `[unidentified]`. Rejected values,
+unknown key names and filesystem paths are omitted from these diagnostics.
+
+Live pages and feed summaries show the evidence capture date in UTC and qualify
+the displayed status as a historical observation. Building the site does not
+recheck the source.
 
 ### Authenticated live admission
 
@@ -63,6 +79,9 @@ Before semantic admission, the wrapper places a private snapshot of the received
 3. SLSA v1 artifact-attestation verification constrained to the producer repository, `publish-live-evidence.yml` workflow, `refs/heads/main` source ref and a denial of self-hosted runners.
 
 These checks authenticate the admitted bytes and their GitHub production path. They do not independently establish the truth, completeness or legal effect of the unsigned Federal Register of Legislation API response.
+
+Each GitHub CLI command has a two-minute timeout. A timeout fails the import
+without retrying or admitting the record.
 
 The registration/publication date is the literal calendar part of the source `registeredAt` field, without timezone conversion. The compilation date is the source `start` field. They describe different events and need not be equal.
 

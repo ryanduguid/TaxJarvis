@@ -13,6 +13,7 @@ const VERSION_LINE =
 const EXEC_OPTIONS = Object.freeze({
   encoding: "utf8",
   maxBuffer: 65_536,
+  timeout: 120_000,
   shell: false,
   windowsHide: true,
 });
