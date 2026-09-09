@@ -57,7 +57,8 @@ const REAL_OPERATIONS = Object.freeze({
 });
 
 async function temporaryRepository(t, { bundleBytes } = {}) {
-  const repositoryRoot = await mkdtemp(join(tmpdir(), "tax-live-import-"));
+  // Windows temporary paths may use aliases; admission requires canonical paths.
+  const repositoryRoot = await realpath(await mkdtemp(join(tmpdir(), "tax-live-import-")));
   t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
   const contentPath = join(repositoryRoot, "content");
   const developmentsPath = join(contentPath, "developments");
