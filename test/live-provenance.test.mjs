@@ -19,6 +19,7 @@ const WORKFLOW =
 const EXEC_OPTIONS = {
   encoding: "utf8",
   maxBuffer: 65_536,
+  timeout: 120_000,
   shell: false,
   windowsHide: true,
 };

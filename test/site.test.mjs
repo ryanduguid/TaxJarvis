@@ -406,7 +406,8 @@ test("every page declares its canonical URL, both feeds and Open Graph identity"
     assert.match(html, new RegExp(`<link rel="canonical" href="${pageUrl}">`));
     assert.match(html, new RegExp(`<meta property="og:url" content="${pageUrl}">`));
     assert.match(html, new RegExp(`<link rel="alternate" type="application/rss\\+xml" title="TaxJarvis" href="${siteUrl}feed.xml">`));
-    assert.match(html, new RegExp(`<link rel="alternate" type="application/feed\\+json" title="TaxJarvis" href="${siteUrl}feed.json">`));
+    assert.match(html, new RegExp(`<link rel="alternate" type="application/json" title="TaxJarvis" href="${siteUrl}feed.json">`));
+    assert.doesNotMatch(html, /application\/feed\+json/);
     assert.match(html, /<meta property="og:title" content="[^"]+">/);
   }
   assert.match(files.get("index.html"), /<meta name="description" content="This vertical slice contains only non-production fixtures and no AI explanation.">/);
@@ -525,7 +526,7 @@ test("live rendering publishes one restrained compilation account in every forma
   const feedRecord = JSON.stringify(feedItem);
   const representations = [homeRecord, developmentRecord, rssItem, feedRecord];
   const headline = "New compilation: Taxation Administration Regulations 2017";
-  const claim = "The Federal Register reports a newer registered current compilation for this title.";
+  const claim = "At capture, the Federal Register reported a newer registered current compilation for this title.";
   const officialUrl = "https://www.legislation.gov.au/F2022L00347/latest/text";
   const evidenceUrl = "https://github.com/ryanduguid/au-tax-legislation-corpus/releases/tag/live-evidence-v2-8ea331ff6670fe1f2221146f33f74cfd6c210b3d9c7eca48da2c592fe5d8764f";
 
@@ -533,6 +534,7 @@ test("live rendering publishes one restrained compilation account in every forma
     for (const expected of [
       headline,
       claim,
+      "Verified at capture on 28 August 2026 (UTC). Current status has not been rechecked.",
       "27 August 2026",
       "18 August 2026",
       "Previous compilation number: 19",
@@ -1273,7 +1275,7 @@ test("build preserves the previous artifact when validation fails", async t => {
   await assert.rejects(() => buildSite({
     rootDir: workspace.rootDir,
     siteUrl: "https://publisher.example/",
-  }), { message: "A development record failed validation" });
+  }), { message: "Development dev-demo-001 failed validation: sources: INVALID_FIELD" });
   assert.equal(await readFile(sentinel, "utf8"), "keep");
 });
 
@@ -1423,8 +1425,48 @@ test("build reports validation failures without disclosing an unknown key", asyn
     rootDir: workspace.rootDir,
     siteUrl: "https://publisher.example/",
   }), error => {
-    assert.equal(error.message, "A development record failed validation");
+    assert.equal(error.message, "Development dev-demo-001 failed validation: $: INVALID_RECORD");
     assert.equal(error.message.includes(marker), false);
+    return true;
+  });
+});
+
+test("build diagnostics bound field names and hide invalid values and nested keys", async t => {
+  const workspace = await temporaryPublisher(t);
+  const marker = "private-value-must-not-appear";
+  const invalid = changed(value => {
+    value.title = ` ${marker}`;
+    value.sources[0][marker] = true;
+    value.sources[0].publisher = ` ${marker}`;
+    value.revision.number = 0;
+  });
+  await writeFile(workspace.recordPath, JSON.stringify(invalid));
+  await assert.rejects(buildSite({ rootDir: workspace.rootDir, siteUrl: "https://publisher.example/" }), error => {
+    assert.equal(error.message, "Development dev-demo-001 failed validation: title: INVALID_FIELD; sources: INVALID_FIELD; revision: INVALID_FIELD");
+    assert.equal(error.message.includes(marker), false);
+    assert.equal(error.message.includes(workspace.rootDir), false);
+    return true;
+  });
+});
+
+test("build diagnostics cap errors and withhold an invalid identifier", async t => {
+  const workspace = await temporaryPublisher(t);
+  const invalid = changed(value => {
+    value.development_id = "private identifier must not appear";
+    value.title = "";
+    value.authority_status = "";
+    value.evidence_status = "";
+    value.publication_status = "";
+    value.published_at = "";
+    value.topics = null;
+  });
+  await writeFile(workspace.recordPath, JSON.stringify(invalid));
+  await assert.rejects(buildSite({ rootDir: workspace.rootDir, siteUrl: "https://publisher.example/" }), error => {
+    assert.match(error.message, /^Development \[unidentified\] failed validation:/);
+    assert.equal((error.message.match(/INVALID_FIELD/g) ?? []).length, 5);
+    assert.match(error.message, /additional errors omitted$/);
+    assert.doesNotMatch(error.message, /private identifier/);
+    assert.ok(error.message.length < 350);
     return true;
   });
 });
@@ -1543,6 +1585,8 @@ function assertWorkflowPolicy(workflow) {
   // followed by a version comment, and no action outside the set may appear.
   const expectedActions = [
     "actions/checkout",
+    "actions/setup-node",
+    "actions/checkout",
     "actions/checkout",
     "actions/setup-node",
     "actions/setup-node",
@@ -1577,6 +1621,12 @@ function assertWorkflowPolicy(workflow) {
   assert.notEqual(publishIndex, -1);
   const validateJob = workflow.slice(0, publishIndex);
   const publishJob = workflow.slice(publishIndex);
+  const windowsIndex = validateJob.search(/^\s*test-windows:\s*$/m);
+  assert.notEqual(windowsIndex, -1);
+  const windowsJob = validateJob.slice(windowsIndex);
+  assert.match(windowsJob, /runs-on: windows-latest/);
+  assert.match(windowsJob, /^\s*run: npm test\s*$/m);
+  assert.doesNotMatch(windowsJob, /^\s*if:|\bnpm\s+ci\b/m);
   assert.doesNotMatch(workflow, /\bnpm\s+install\b/i);
   assert.doesNotMatch(publishJob, /\bnpm\s+ci\b/i);
   assert.equal((workflow.match(/\bnpm\s+ci\b/gi) ?? []).length, 1);
@@ -1591,14 +1641,14 @@ function assertWorkflowPolicy(workflow) {
   assert.match(workflow, /SITE_URL: \$\{\{ steps\.pages\.outputs\.base_url \}\}/);
   assert.match(workflow, /pages: write/);
   assert.match(workflow, /id-token: write/);
-  assert.match(workflow, /needs: validate/);
+  assert.match(publishJob, /needs: \[validate, test-windows\]/);
   assert.match(
     workflow,
     /github\.ref == 'refs\/heads\/main' && github\.event_name == 'workflow_dispatch'/,
   );
   assert.equal(
     (workflow.match(/^\s*package-manager-cache:\s*false\s*$/gm) ?? []).length,
-    2,
+    3,
   );
   assert.doesNotMatch(workflow, /^\s*cache\s*:/mi);
   assert.doesNotMatch(workflow, /^\s*continue-on-error\s*:/mi);
@@ -1628,8 +1678,14 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     "run: npm run lint",
     "run: npm run build && npm test",
     "run: npm run smoke",
+    "test-windows:",
+    "runs-on: windows-latest",
+    "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+    "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0",
+    "package-manager-cache: false",
+    "run: npm test",
     "publish:",
-    "needs: validate",
+    "needs: [validate, test-windows]",
     "github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'",
     "pages: write",
     "id-token: write",
@@ -1644,6 +1700,9 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
 
   assert.doesNotThrow(() => assertWorkflowPolicy(approvedWorkflow));
   for (const mutation of [
+    approvedWorkflow.replace("runs-on: windows-latest", "runs-on: ubuntu-latest"),
+    approvedWorkflow.replace("run: npm test\n", ""),
+    approvedWorkflow.replace("needs: [validate, test-windows]", "needs: validate"),
     approvedWorkflow.replace(
       "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
       "actions/checkout@v7",
