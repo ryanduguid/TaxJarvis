@@ -1604,9 +1604,12 @@ function assertWorkflowPolicy(workflow) {
   assert.doesNotMatch(workflow, /^\s*continue-on-error\s*:/mi);
 }
 
-test("workflow policy: one pinned workflow validates before main deployment", async () => {
+test("workflow policy: the pinned workflow validates before main deployment", async () => {
   const workflowDirectory = new URL("../.github/workflows/", import.meta.url);
-  assert.deepEqual(await readdir(workflowDirectory), ["publish.yml"]);
+  assert.deepEqual(await readdir(workflowDirectory), [
+    "no-ai-attribution.yml",
+    "publish.yml",
+  ]);
   const workflow = await readFile(new URL("publish.yml", workflowDirectory), "utf8");
 
   assertWorkflowPolicy(workflow);
