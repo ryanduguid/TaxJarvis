@@ -1,4 +1,4 @@
-# TaxJarvis: inspect a source record before drawing a conclusion
+# TaxJarvis: Australian tax source-verification demo
 
 Non-production source-only demonstration with one synthetic fixture and one authenticated Federal Register metadata record. Review aid, not professional advice; a practitioner must check the source and decide its relevance.
 
