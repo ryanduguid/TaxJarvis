@@ -1,6 +1,6 @@
 # TaxJarvis: Australian tax source-verification demo
 
-This non-production source-only demonstration contains one synthetic fixture and one authenticated Federal Register metadata record. Review aid, not professional advice; a practitioner must check the source and decide its relevance.
+This non-production source-only demonstration contains one synthetic fixture and one authenticated Federal Register metadata record. The built site is published at [duguid.com.au/TaxJarvis](https://duguid.com.au/TaxJarvis/). Review aid, not professional advice; a practitioner must check the source and decide its relevance.
 
 **Inputs:** the synthetic [dev-demo-001](content/developments/dev-demo-001/development.json) fixture, whose publisher and source URL are fictional, and the authenticated [Federal Register snapshot](content/developments/dev-frl-c2004a04633-c2026c00361/development.json).
 
@@ -27,6 +27,16 @@ was admitted through the supported live importer. Its evidence was captured on
 [admission record](docs/live-admission.md) gives the authenticated asset and
 reproduction commands. This local demonstration does not establish a hosted
 monitoring service or client use.
+
+Four modules carry that admission path: `live-evidence.mjs`,
+`live-import-internals.mjs`, `live-provenance.mjs` and `import-live.mjs` are
+2,103 of the 4,152 lines across the nine application modules. That half is
+deliberate, because almost all of it is verification and refusal rather than
+feature work: release, exact-byte digest and SLSA attestation checks, strict
+schema and cross-field validation, and a promotion that returns `unchanged`
+only for a byte-identical existing target and refuses every other one. The path
+is Windows-only and needs an authenticated GitHub CLI, so it never runs during
+`npm run build` and its admission tests skip on Ubuntu.
 
 <details>
 <summary>Requirements, publication model, admission boundaries and licensing</summary>
