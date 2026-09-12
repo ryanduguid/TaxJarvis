@@ -157,6 +157,40 @@ test("bundle validation rejects timestamp ordering conflicts", () => {
   );
 });
 
+test("bundle validation rejects compilation dates that are not real calendar dates", () => {
+  for (const date of [20260701, null, "2026-7-1", "2026-07-01T00:00:00Z", "2026-02-30", "2026-13-01"]) {
+    assertInvalid(
+      value => { value.source_event.previous_compilation.date = date; },
+      "source_event.previous_compilation.date",
+    );
+  }
+});
+
+test("bundle validation rejects a current compilation that does not supersede the previous one", () => {
+  assertInvalid(
+    value => { value.source_event.previous_compilation.number = "2"; },
+    "source_event.current_compilation.number",
+  );
+  for (const date of ["2026-08-05", "2026-08-06"]) {
+    assertInvalid(
+      value => { value.source_event.previous_compilation.date = date; },
+      "source_event.current_compilation.date",
+    );
+  }
+});
+
+test("bundle validation rejects publication that does not map the compilation date to midnight UTC", () => {
+  for (const publishedAt of ["2026-08-05T12:00:00Z", "2026-08-04T00:00:00Z"]) {
+    assertInvalid(
+      value => {
+        value.development.published_at = publishedAt;
+        value.sources[0].published_at = publishedAt;
+      },
+      "development.published_at",
+    );
+  }
+});
+
 test("bundle validation rejects duplicate source identities", () => {
   assertInvalid(
     value => { value.sources.push(structuredClone(value.sources[0])); },
