@@ -1,6 +1,6 @@
 # TaxJarvis: Australian tax source-verification demo
 
-Non-production source-only demonstration with one synthetic fixture and one authenticated Federal Register metadata record. Review aid, not professional advice; a practitioner must check the source and decide its relevance.
+This non-production source-only demonstration contains one synthetic fixture and one authenticated Federal Register metadata record. Review aid, not professional advice; a practitioner must check the source and decide its relevance.
 
 **Inputs:** the synthetic [dev-demo-001](content/developments/dev-demo-001/development.json) fixture, whose publisher and source URL are fictional, and the authenticated [Federal Register snapshot](content/developments/dev-frl-c2004a04633-c2026c00361/development.json).
 
@@ -42,7 +42,7 @@ Authenticated live evidence admission is supported only on Windows and additiona
 ## Commands
 
 - `npm run dev` builds once and serves `out/` at `http://127.0.0.1:4173/`.
-- `npm run build` creates the static artifact.
+- `npm run build` creates the static site.
 - `npm run import-bundle -- --bundle <file>` authenticates and admits one live-v2 evidence bundle under the rules below.
 - `npm test` runs the complete Node test suite and prints a coverage summary.
 - `npm run lint` runs ESLint with the recommended rules (after `npm ci`).
@@ -56,7 +56,7 @@ Ubuntu skips.
 
 `content/developments/` contains the synthetic `dev-demo-001` record and the
 authenticated `dev-frl-c2004a04633-c2026c00361` record. HTML, RSS and JSON are generated projections. Invalid input
-stops the build before the current artifact is replaced. Canonical record files
+stops the build before the current build is replaced. Canonical record files
 also use strict UTF-8 and duplicate-member rejection during every build.
 
 Validation errors identify the record and up to five affected top-level fields
@@ -76,7 +76,7 @@ Before semantic admission, the wrapper places a private snapshot of the received
 
 1. verification of the derived tagged release;
 2. exact release-asset digest verification for that private snapshot; and
-3. SLSA v1 artifact-attestation verification constrained to the producer repository, `publish-live-evidence.yml` workflow, `refs/heads/main` source ref and a denial of self-hosted runners.
+3. SLSA v1 artefact attestation verification constrained to the producer repository, `publish-live-evidence.yml` workflow, `refs/heads/main` source ref and a denial of self-hosted runners.
 
 These checks authenticate the admitted bytes and their GitHub production path. They do not independently establish the truth, completeness or legal effect of the unsigned Federal Register of Legislation API response.
 
@@ -91,7 +91,7 @@ This transaction assumes a trusted, exclusive local operator, checkout and desti
 
 An admitted record is a restrained factual source update. It reports the registered current compilation at capture time and its source fields, but does not infer amendment, commencement, practical impact, advice or an explainer. Hosted activation, automatic monitoring, further live imports and deployment remain separately authorised future work.
 
-Outside contributions are not accepted during this vertical slice. Contribution, correction, security and editorial policies must be approved before that changes.
+Outside contributions are not accepted during this demonstration. Contribution, correction, security and editorial policies must be approved before that changes.
 
 ## Licensing
 
