@@ -4,3 +4,20 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # The only npm dependencies are the ESLint packages that `npm run lint`
+      # needs, and a repository test pins that exact dev-dependency set. A
+      # split bump would leave the set half-updated, so minor and patch
+      # updates arrive as one reviewable pull request. Major updates stay
+      # separate, because they can change the recommended rule set.
+      lint-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
