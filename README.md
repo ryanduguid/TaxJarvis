@@ -1,6 +1,6 @@
 # TaxJarvis: Australian tax source-verification demo
 
-This non-production source-only demonstration contains one synthetic fixture and one authenticated Federal Register metadata record. Review aid, not professional advice; a practitioner must check the source and decide its relevance.
+This non-production source-only demonstration contains one synthetic fixture and one authenticated Federal Register metadata record. The built site is published at [duguid.com.au/TaxJarvis](https://duguid.com.au/TaxJarvis/). Review aid, not professional advice; a practitioner must check the source and decide its relevance.
 
 **Inputs:** the synthetic [dev-demo-001](content/developments/dev-demo-001/development.json) fixture, whose publisher and source URL are fictional, and the authenticated [Federal Register snapshot](content/developments/dev-frl-c2004a04633-c2026c00361/development.json).
 
