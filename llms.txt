@@ -1,0 +1,26 @@
+# TaxJarvis
+
+> A non-production, source-only demonstration of Australian tax source verification, published at https://duguid.com.au/TaxJarvis/. It holds exactly two records: one synthetic fixture and one authenticated Federal Register of Legislation metadata snapshot. It is a review aid, not professional advice. Building the site does not recheck a source or establish its current legal effect.
+
+Source: https://github.com/ryanduguid/TaxJarvis
+Licence: original code under AGPL-3.0-only; content, factual data, third-party material and marks under `CONTENT-LICENCE.md`.
+
+## Records
+
+Canonical records live under `content/developments/`. HTML, RSS and JSON are generated projections of them.
+
+- `dev-demo-001` (`content/developments/dev-demo-001/development.json`): the synthetic fixture, schema `development.v1`, titled "Demonstration source". Its publisher and canonical URL are fictional, and the canonical URL is `https://example.invalid/demonstration-source`. Nothing in it is a real source.
+- `dev-frl-c2004a04633-c2026c00361` (`content/developments/dev-frl-c2004a04633-c2026c00361/development.json`): the authenticated record, schema `development.v2`, mode `live`, for the Superannuation Industry (Supervision) Act 1993. Its metadata was retrieved from the Federal Register of Legislation at `2026-08-30T06:51:55Z` and identifies compilation 131, register document `C2026C00361`, compilation date 10 August 2026 and registration date 14 August 2026. It is a capture-time snapshot, not an assertion about the Register today.
+
+Both records carry `publication_status` `source-only` and `effective_at` `null`. No commencement date, amendment analysis, practical impact or explainer is published for either.
+
+## Feeds
+
+- https://duguid.com.au/TaxJarvis/feed.json uses the custom `feed.v2` schema and is advertised as `application/json`. The document has `schema_version`, `updated_at` and `items`. Each item has `development_id`, `url`, `title`, `summary`, `mode`, `authority_status`, `evidence_status`, `publication_status`, `published_at` and `updated_at`. It is not JSON Feed, so feed readers should subscribe to RSS instead.
+- https://duguid.com.au/TaxJarvis/feed.xml is RSS 2.0 with an Atom `updated` element on each item.
+
+## Boundaries
+
+- Live evidence admission is supported only on Windows and additionally requires an authenticated GitHub CLI. `docs/live-admission.md` records the admitted asset, its digest and the reproduction commands.
+- Hosted activation, automatic monitoring, further live imports and deployment remain separately authorised future work.
+- Outside contributions are not accepted during this demonstration.
