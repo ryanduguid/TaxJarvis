@@ -10,7 +10,7 @@ Its SHA-256 is `575ad9fe2337187abd491dd3e7a9455acb187961dcbf6599154f9250439412ec
 
 The unmodified importer verified the release, the asset's exact bytes and its
 SLSA attestation, constrained to the producer workflow, main source ref and
-hosted runners. All three checks passed before admission. No verification
+hosted runners. All 3 checks passed before admission. No verification
 override or test seam was used.
 
 ## Reproduce on Windows
