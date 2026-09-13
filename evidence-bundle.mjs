@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { createHash } from "node:crypto";
 import {
   exactKeys,
   httpsUrl,
@@ -10,7 +9,6 @@ import {
   text,
   utcTimestamp,
 } from "./validation-primitives.mjs";
-import { parseStrictJsonBytes } from "./strict-json.mjs";
 
 const BUNDLE_KEYS = new Set([
   "schema_version",
@@ -610,100 +608,4 @@ export function validateCanonicalDevelopmentV2(input) {
     );
   }
   return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
-}
-
-export function parseEvidenceBundle(bytes) {
-  const bundle = parseStrictJsonBytes(bytes);
-  const result = validateEvidenceBundle(bundle);
-  if (!result.ok) {
-    throw new EvidenceBundleError("evidence bundle is invalid");
-  }
-  const bundleSha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-  return { bundle: result.value, bundleSha256 };
-}
-
-function copyProducer(producer) {
-  return {
-    name: producer.name,
-    version: producer.version,
-    baseline_sha256: producer.baseline_sha256,
-    observation_facts_sha256: producer.observation_facts_sha256,
-  };
-}
-
-function copySourceEvent(sourceEvent) {
-  return {
-    kind: sourceEvent.kind,
-    register_id: sourceEvent.register_id,
-    collection: sourceEvent.collection,
-    previous_compilation: {
-      number: sourceEvent.previous_compilation.number,
-      date: sourceEvent.previous_compilation.date,
-    },
-    current_compilation: {
-      number: sourceEvent.current_compilation.number,
-      date: sourceEvent.current_compilation.date,
-      register_document_id:
-        sourceEvent.current_compilation.register_document_id,
-    },
-  };
-}
-
-function copySource(source) {
-  return {
-    source_id: source.source_id,
-    publisher: source.publisher,
-    document_class: source.document_class,
-    title: source.title,
-    canonical_url: source.canonical_url,
-    published_at: source.published_at,
-    retrieved_at: source.retrieved_at,
-    evidence_id: source.evidence_id,
-    content_sha256: source.content_sha256,
-    content_kind: source.content_kind,
-    content_media_type: source.content_media_type,
-    rights: {
-      mode: source.rights.mode,
-      attribution: source.rights.attribution,
-      licence_url: source.rights.licence_url,
-    },
-    evidence: [],
-  };
-}
-
-export function transformEvidenceBundle(bundle, { bundleSha256 } = {}) {
-  const result = validateEvidenceBundle(bundle);
-  if (!result.ok || typeof bundleSha256 !== "string" || !SHA256_ID.test(bundleSha256)) {
-    throw new EvidenceBundleError("a validated evidence bundle and digest are required");
-  }
-  const accepted = result.value;
-  return {
-    schema_version: "development.v2",
-    development_id: accepted.development_id,
-    mode: accepted.mode,
-    title: accepted.development.title,
-    authority_status: accepted.development.authority_status,
-    evidence_status: accepted.development.evidence_status,
-    publication_status: accepted.development.publication_status,
-    published_at: accepted.development.published_at,
-    effective_at: accepted.development.effective_at,
-    topics: accepted.development.topics.map(topic => topic),
-    affected_practice_areas:
-      accepted.development.affected_practice_areas.map(area => area),
-    source_event: copySourceEvent(accepted.source_event),
-    sources: accepted.sources.map(source => copySource(source)),
-    explainer: null,
-    revision: {
-      number: accepted.revision.number,
-      updated_at: accepted.revision.updated_at,
-      change_note: accepted.revision.change_note,
-      replaces_bundle_id: accepted.revision.replaces_bundle_id,
-    },
-    upstream: {
-      bundle_id: accepted.bundle_id,
-      bundle_sha256: bundleSha256,
-      generated_at: accepted.generated_at,
-      producer: copyProducer(accepted.producer),
-    },
-  };
 }

@@ -21,10 +21,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import {
-  parseEvidenceBundle,
-  transformEvidenceBundle,
-} from "../evidence-bundle.mjs";
-import {
   parseLiveEvidenceBundle,
   transformLiveEvidenceBundle,
 } from "../live-evidence.mjs";
@@ -41,14 +37,11 @@ const fixtureUrl = new URL(
   import.meta.url,
 );
 const fixture = JSON.parse(await readFile(fixtureUrl, "utf8"));
-const bundleFixtureUrl = new URL(
-  "./fixtures/evidence-bundle.v1.json",
+const v2FixtureUrl = new URL(
+  "./fixtures/development.v2.json",
   import.meta.url,
 );
-const parsedBundleFixture = parseEvidenceBundle(await readFile(bundleFixtureUrl));
-const v2Fixture = transformEvidenceBundle(parsedBundleFixture.bundle, {
-  bundleSha256: parsedBundleFixture.bundleSha256,
-});
+const v2Fixture = JSON.parse(await readFile(v2FixtureUrl, "utf8"));
 const liveBundleFixtureUrl = new URL(
   "./fixtures/evidence-bundle.v2.json",
   import.meta.url,
@@ -1569,10 +1562,9 @@ function assertWorkflowPolicy(workflow) {
   assert.match(workflow, /pull_request:/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /branches:\s*\n\s+- main/);
-  assert.match(workflow, /npm run smoke/);
   // Only the validate job may install packages, only with `npm ci` from the
   // committed lockfile, only once, and only so that lint runs before the
-  // build, the full suite and smoke.
+  // build and the full suite.
   // The publish job stays installation-free.
   const publishIndex = workflow.search(/^\s*publish:\s*$/m);
   assert.notEqual(publishIndex, -1);
@@ -1590,11 +1582,10 @@ function assertWorkflowPolicy(workflow) {
   const installIndex = validateJob.search(/^\s*run:\s*npm ci\s*$/m);
   const lintIndex = validateJob.search(/npm run lint/);
   const buildTestIndex = validateJob.search(/npm run build && npm test/);
-  const smokeIndex = validateJob.search(/npm run smoke/);
   assert.notEqual(installIndex, -1);
   assert.notEqual(lintIndex, -1);
   assert.notEqual(buildTestIndex, -1);
-  assert.ok(installIndex < lintIndex && lintIndex < buildTestIndex && buildTestIndex < smokeIndex);
+  assert.ok(installIndex < lintIndex && lintIndex < buildTestIndex);
   assert.match(workflow, /SITE_URL: \$\{\{ steps\.pages\.outputs\.base_url \}\}/);
   assert.match(workflow, /pages: write/);
   assert.match(workflow, /id-token: write/);
@@ -1635,7 +1626,6 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     "run: npm ci",
     "run: npm run lint",
     "run: npm run build && npm test",
-    "run: npm run smoke",
     "test-windows:",
     "runs-on: windows-latest",
     "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
@@ -1697,7 +1687,6 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     approvedWorkflow.replace("run: npm run lint\n", ""),
     approvedWorkflow.replace("run: npm ci\nrun: npm run lint\n", "run: npm run lint\nrun: npm ci\n"),
     approvedWorkflow.replace("run: npm run lint\nrun: npm run build && npm test\n", "run: npm run build && npm test\nrun: npm run lint\n"),
-    approvedWorkflow.replace("run: npm run build && npm test\nrun: npm run smoke\n", "run: npm run smoke\nrun: npm run build && npm test\n"),
     approvedWorkflow.replace("run: npm run build && npm test\n", ""),
     `${approvedWorkflow}\ncontinue-on-error: true`,
   ]) {

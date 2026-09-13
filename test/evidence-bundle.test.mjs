@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import {
-  parseEvidenceBundle,
-  transformEvidenceBundle,
-  validateEvidenceBundle,
-} from "../evidence-bundle.mjs";
+import { validateEvidenceBundle } from "../evidence-bundle.mjs";
 
 const GOLDEN = new URL("./fixtures/evidence-bundle.v1.json", import.meta.url);
 const PROVENANCE = new URL(
@@ -56,9 +53,11 @@ test("golden upstream evidence bundle validates with its exact byte digest", asy
   );
   assert.match(provenance.sha256, /^sha256:[0-9a-f]{64}$/);
   assert.deepEqual(validateEvidenceBundle(golden), { ok: true, value: golden });
-  const parsed = parseEvidenceBundle(goldenBytes);
-  assert.equal(parsed.bundle.schema_version, "evidence-bundle.v1");
-  assert.equal(parsed.bundleSha256, provenance.sha256);
+  assert.equal(golden.schema_version, "evidence-bundle.v1");
+  assert.equal(
+    `sha256:${createHash("sha256").update(goldenBytes).digest("hex")}`,
+    provenance.sha256,
+  );
   assert.equal(
     provenance.commit,
     "33c79f20c08d7e0c79c7038c54ea20f0c7bd6443",
@@ -213,68 +212,4 @@ test("bundle validation rejects source-event and source disagreement", () => {
     value => { value.sources[0].published_at = "2026-08-06T00:00:00Z"; },
     "sources[0].published_at",
   );
-});
-
-test("invalid bundle bytes fail before producing a digest", () => {
-  assert.throws(
-    () => parseEvidenceBundle(Buffer.from('{"mode":"live","mode":"synthetic"}')),
-    /duplicate JSON member/,
-  );
-  assert.throws(() => parseEvidenceBundle(Buffer.from("{}")), /evidence bundle is invalid/);
-});
-
-test("canonical transformation is not available before bundle admission", () => {
-  assert.throws(
-    () => transformEvidenceBundle({}, { bundleSha256: "sha256:" + "0".repeat(64) }),
-    /validated evidence bundle/,
-  );
-});
-
-test("canonical transformation constructs an independent development.v2 record", () => {
-  const parsed = parseEvidenceBundle(goldenBytes);
-  const development = transformEvidenceBundle(parsed.bundle, {
-    bundleSha256: parsed.bundleSha256,
-  });
-  assert.deepEqual(Object.keys(development), [
-    "schema_version",
-    "development_id",
-    "mode",
-    "title",
-    "authority_status",
-    "evidence_status",
-    "publication_status",
-    "published_at",
-    "effective_at",
-    "topics",
-    "affected_practice_areas",
-    "source_event",
-    "sources",
-    "explainer",
-    "revision",
-    "upstream",
-  ]);
-  assert.equal(development.schema_version, "development.v2");
-  assert.equal(development.explainer, null);
-  assert.deepEqual(development.source_event, parsed.bundle.source_event);
-  assert.deepEqual(development.sources, parsed.bundle.sources);
-  assert.deepEqual(development.upstream, {
-    bundle_id: parsed.bundle.bundle_id,
-    bundle_sha256: parsed.bundleSha256,
-    generated_at: parsed.bundle.generated_at,
-    producer: parsed.bundle.producer,
-  });
-
-  parsed.bundle.development.title = "Mutated after transformation";
-  parsed.bundle.development.topics.push("mutated");
-  parsed.bundle.source_event.current_compilation.number = "999";
-  parsed.bundle.sources[0].rights.attribution = "Mutated attribution";
-  parsed.bundle.producer.name = "mutated-producer";
-  assert.equal(development.title, "Sample Consumption Tax Act 2099");
-  assert.deepEqual(development.topics, []);
-  assert.equal(development.source_event.current_compilation.number, "2");
-  assert.equal(
-    development.sources[0].rights.attribution,
-    "Synthetic Federal Register fixture",
-  );
-  assert.equal(development.upstream.producer.name, "tax-radar-au");
 });
