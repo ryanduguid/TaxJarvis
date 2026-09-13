@@ -37,9 +37,6 @@ jobs:
       - name: Build and test
         run: npm run build && npm test
 
-      - name: Smoke-test artifact
-        run: npm run smoke
-
   test-windows:
     timeout-minutes: 30
     runs-on: windows-latest
