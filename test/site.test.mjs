@@ -1510,6 +1510,40 @@ test("repository policy: licences, documentation and static-only styling are exp
   assert.match(licence, /Version 3, 19 November 2007/);
 });
 
+test("repository policy: the README module line counts match the modules", async () => {
+  const rootUrl = new URL("../", import.meta.url);
+  const readme = await readFile(new URL("README.md", rootUrl), "utf8");
+  // The nine application modules, excluding eslint.config.mjs, which is
+  // tooling configuration rather than part of the demonstration.
+  const applicationModules = (await readdir(rootUrl))
+    .filter(name => name.endsWith(".mjs") && name !== "eslint.config.mjs")
+    .toSorted();
+  const admissionModules = [
+    "import-live.mjs",
+    "live-evidence.mjs",
+    "live-import-internals.mjs",
+    "live-provenance.mjs",
+  ];
+  const lineCount = async name =>
+    (await readFile(new URL(name, rootUrl), "utf8")).split("\n").length - 1;
+  const counts = await Promise.all(applicationModules.map(lineCount));
+  const admissionCounts = await Promise.all(admissionModules.map(lineCount));
+  const total = counts.reduce((sum, value) => sum + value, 0);
+  const admission = admissionCounts.reduce((sum, value) => sum + value, 0);
+
+  const claim = readme.match(
+    /([\d,]+) of the ([\d,]+) lines across the (\d+) application modules/,
+  );
+  assert.ok(claim, "the README must state the admission and application line counts");
+  const asNumber = text => Number(text.replaceAll(",", ""));
+  assert.equal(asNumber(claim[1]), admission);
+  assert.equal(asNumber(claim[2]), total);
+  assert.equal(Number(claim[3]), applicationModules.length);
+  // The claim carries the date it was measured, so a later count is visibly
+  // a later measurement rather than a silent overstatement.
+  assert.match(readme, /measured on\s+13 September 2026/);
+});
+
 test("repository policy: generated pages contain no browser code or remote assets", async t => {
   const workspace = await temporaryPublisher(t);
   await buildSite({

@@ -103,7 +103,7 @@ test("golden live evidence proves the bounded compilation fact", () => {
   ]);
   assert.equal(
     parsed.bundleSha256,
-    "sha256:b1f0b76202c056f46c9eb6633ccfbea13f8487e0cadf7ddca001dc8acb07b5a1",
+    "sha256:9a55ae789a71bb5571a77d0838526fcc3ef18ef6fc4d4f9ffe93653cd39cd916",
   );
   assert.equal(
     parsed.releaseTag,
@@ -131,7 +131,7 @@ test("golden live evidence proves the bounded compilation fact", () => {
       "sha256:8ea331ff6670fe1f2221146f33f74cfd6c210b3d9c7eca48da2c592fe5d8764f",
     producer: {
       name: "tax-radar-au",
-      version: "0.1.3",
+      version: "0.1.6",
       baseline_sha256:
         "sha256:a9d403d633f3dc9ecf8447fadb794c687bdb481a4776c493798a58a160eaa997",
       observation_facts_sha256:
@@ -198,11 +198,11 @@ test("live evidence transforms directly to the canonical development", () => {
     upstream: {
       bundle_id: "bundle-frl-f2022l00347-f2026c00838-r1",
       bundle_sha256:
-        "sha256:b1f0b76202c056f46c9eb6633ccfbea13f8487e0cadf7ddca001dc8acb07b5a1",
+        "sha256:9a55ae789a71bb5571a77d0838526fcc3ef18ef6fc4d4f9ffe93653cd39cd916",
       generated_at: "2026-08-28T00:00:00Z",
       producer: {
         name: "tax-radar-au",
-        version: "0.1.3",
+        version: "0.1.6",
         baseline_sha256:
           "sha256:a9d403d633f3dc9ecf8447fadb794c687bdb481a4776c493798a58a160eaa997",
         observation_facts_sha256:

@@ -38,8 +38,12 @@ const REAL_DEVELOPMENTS = fileURLToPath(
 const DEVELOPMENT_ID = "dev-frl-f2022l00347-f2026c00838";
 const RELEASE_TAG =
   "live-evidence-v2-8ea331ff6670fe1f2221146f33f74cfd6c210b3d9c7eca48da2c592fe5d8764f";
+// The golden v2 fixture is copied byte for byte from the producer's
+// tests/corpus/fixtures/live-evidence/evidence-bundle.v2.json. Its
+// producer.version tracks the producer's release, so re-copy the file and
+// update this digest whenever the producer publishes a new version.
 const BUNDLE_SHA256 =
-  "sha256:b1f0b76202c056f46c9eb6633ccfbea13f8487e0cadf7ddca001dc8acb07b5a1";
+  "sha256:9a55ae789a71bb5571a77d0838526fcc3ef18ef6fc4d4f9ffe93653cd39cd916";
 const SNAPSHOT_NAME = "evidence-bundle.v2.json";
 const USAGE = "Usage: npm run import-bundle -- --bundle <file>\n";
 
