@@ -1,4 +1,4 @@
-# Content and Data Licensing
+# Content and data licensing
 
 ## Original code
 

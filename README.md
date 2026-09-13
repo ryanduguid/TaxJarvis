@@ -21,7 +21,7 @@ The JSON endpoint uses the custom `feed.v2` schema and is advertised as
 
 Review question: what primary source and effective date would I need before changing a workpaper or advising on a development?
 
-The [Superannuation Industry (Supervision) Act 1993 record](content/developments/dev-frl-c2004a04633-c2026c00361/development.json)
+The [*Superannuation Industry (Supervision) Act 1993* record](content/developments/dev-frl-c2004a04633-c2026c00361/development.json)
 was admitted through the supported live importer. Its evidence was captured on
 30 August 2026; it does not establish the current compilation today. The
 [admission record](docs/live-admission.md) gives the authenticated asset and
@@ -30,7 +30,7 @@ monitoring service or client use.
 
 Four modules carry that admission path: `live-evidence.mjs`,
 `live-import-internals.mjs`, `live-provenance.mjs` and `import-live.mjs` are
-2,103 of the 4,152 lines across the nine application modules. That half is
+2,103 of the 4,152 lines across the 9 application modules. That half is
 deliberate, because almost all of it is verification and refusal rather than
 feature work: release, exact-byte digest and SLSA attestation checks, strict
 schema and cross-field validation, and a promotion that returns `unchanged`
@@ -69,7 +69,7 @@ authenticated `dev-frl-c2004a04633-c2026c00361` record. HTML, RSS and JSON are g
 stops the build before the current build is replaced. Canonical record files
 also use strict UTF-8 and duplicate-member rejection during every build.
 
-Validation errors identify the record and up to five affected top-level fields
+Validation errors identify the record and up to 5 affected top-level fields
 using `INVALID_FIELD`, or `INVALID_RECORD` for unknown fields and invalid shapes.
 Invalid or mismatched identifiers appear as `[unidentified]`. Rejected values,
 unknown key names and filesystem paths are omitted from these diagnostics.
@@ -82,15 +82,15 @@ recheck the source.
 
 The supported wrapper fixes both the repository root and the `content/developments` destination. It accepts only the exact `--bundle <file>` argument and has no supported content-root, mode, provenance-skip, offline, overwrite or retry option.
 
-Before semantic admission, the wrapper places a private snapshot of the received bytes under `content/.live-import-*` and runs three GitHub checks against `ryanduguid/au-tax-legislation-corpus`:
+Before semantic admission, the wrapper places a private snapshot of the received bytes under `content/.live-import-*` and runs 3 GitHub checks against `ryanduguid/au-tax-legislation-corpus`:
 
-1. verification of the derived tagged release;
-2. exact release-asset digest verification for that private snapshot; and
+1. verification of the derived tagged release
+2. exact release-asset digest verification for that private snapshot
 3. SLSA v1 artefact attestation verification constrained to the producer repository, `publish-live-evidence.yml` workflow, `refs/heads/main` source ref and a denial of self-hosted runners.
 
 These checks authenticate the admitted bytes and their GitHub production path. They do not independently establish the truth, completeness or legal effect of the unsigned Federal Register of Legislation API response.
 
-Each GitHub CLI command has a two-minute timeout. A timeout fails the import
+Each GitHub CLI command has a 2-minute timeout. A timeout fails the import
 without retrying or admitting the record.
 
 The registration/publication date is the literal calendar part of the source `registeredAt` field, without timezone conversion. The compilation date is the source `start` field. They describe different events and need not be equal.
