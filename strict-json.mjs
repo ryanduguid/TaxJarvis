@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+/**
+ * @typedef {{source: string, index: number, depth: number, canonicalScalars: boolean}} ParserState
+ * @typedef {null | boolean | number | string | JsonValue[] | {[key: string]: JsonValue}} JsonValue
+ */
+
 const DEFAULT_MAXIMUM_BYTES = 1_048_576;
 const MAXIMUM_NESTING_DEPTH = 128;
 const JSON_WHITESPACE = new Set([" ", "\t", "\r", "\n"]);
@@ -9,16 +14,26 @@ const DECIMAL_DIGIT = /^[0-9]$/;
 const NON_ZERO_DIGIT = /^[1-9]$/;
 
 export class StrictJsonError extends Error {
+  /**
+   * @param {string} message
+   */
   constructor(message) {
     super(message);
     this.name = "StrictJsonError";
   }
 }
 
+/**
+ * @param {ParserState} state
+ */
 function skipWhitespace(state) {
   while (JSON_WHITESPACE.has(state.source[state.index])) state.index += 1;
 }
 
+/**
+ * @param {ParserState} state
+ * @param {string} character
+ */
 function expect(state, character) {
   if (state.source[state.index] !== character) {
     throw new StrictJsonError("JSON contains invalid container punctuation");
@@ -26,6 +41,9 @@ function expect(state, character) {
   state.index += 1;
 }
 
+/**
+ * @param {ParserState} state
+ */
 function enterContainer(state) {
   state.depth += 1;
   if (state.depth > MAXIMUM_NESTING_DEPTH) {
@@ -33,6 +51,10 @@ function enterContainer(state) {
   }
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {string}
+ */
 function parseString(state) {
   if (state.source[state.index] !== '"') {
     throw new StrictJsonError("JSON object members and strings must be quoted");
@@ -82,6 +104,10 @@ function parseString(state) {
   throw new StrictJsonError("JSON contains an unterminated string");
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {number}
+ */
 function parseNumber(state) {
   const start = state.index;
   if (state.source[state.index] === "-") state.index += 1;
@@ -132,6 +158,13 @@ function parseNumber(state) {
   return value;
 }
 
+/**
+ * @template {boolean | null} T
+ * @param {ParserState} state
+ * @param {string} token
+ * @param {T} value
+ * @returns {T}
+ */
 function parseLiteral(state, token, value) {
   if (!state.source.startsWith(token, state.index)) {
     throw new StrictJsonError("JSON contains an invalid literal");
@@ -140,11 +173,16 @@ function parseLiteral(state, token, value) {
   return value;
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {JsonValue[]}
+ */
 function parseArray(state) {
   enterContainer(state);
   state.index += 1;
   try {
     skipWhitespace(state);
+    /** @type {JsonValue[]} */
     const values = [];
     if (state.source[state.index] === "]") {
       state.index += 1;
@@ -165,11 +203,16 @@ function parseArray(state) {
   }
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {{[key: string]: JsonValue}}
+ */
 function parseObject(state) {
   enterContainer(state);
   state.index += 1;
   try {
     skipWhitespace(state);
+    /** @type {[string, JsonValue][]} */
     const entries = [];
     const keys = new Set();
     if (state.source[state.index] === "}") {
@@ -199,6 +242,10 @@ function parseObject(state) {
   }
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {JsonValue}
+ */
 function parseValue(state) {
   const character = state.source[state.index];
   if (character === "{") return parseObject(state);
@@ -213,6 +260,11 @@ function parseValue(state) {
   throw new StrictJsonError("input must contain one JSON value");
 }
 
+/**
+ * @param {unknown} input
+ * @param {{maximumBytes?: number, canonicalScalars?: boolean}} [options]
+ * @returns {unknown} Parsed JSON still needs schema validation.
+ */
 export function parseStrictJsonBytes(
   input,
   { maximumBytes = DEFAULT_MAXIMUM_BYTES, canonicalScalars = false } = {},

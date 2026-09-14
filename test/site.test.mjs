@@ -51,11 +51,11 @@ const parsedLiveBundleFixture = parseLiveEvidenceBundle(
 );
 const liveFixture = transformLiveEvidenceBundle(parsedLiveBundleFixture);
 
-// The only permitted package graph is the pinned lint tooling. Build, test,
+// The only permitted package graph is the pinned development tooling. Build, test,
 // import and publication stay dependency-free.
-const LINT_DEV_DEPENDENCIES = ["@eslint/js", "eslint", "globals"];
+const CHECK_DEV_DEPENDENCIES = ["@eslint/js", "eslint", "globals", "typescript"];
 
-test("repository contract: package has no runtime graph and pins its lint tooling", async () => {
+test("repository contract: package has no runtime graph and pins its check tooling", async () => {
   const packageJson = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
   );
@@ -67,11 +67,12 @@ test("repository contract: package has no runtime graph and pins its lint toolin
   assert.equal(packageJson.engines.npm, ">=11.17.0");
   assert.equal(packageJson.packageManager, "npm@11.17.0");
   assert.equal(Object.hasOwn(packageJson, "dependencies"), false);
-  assert.deepEqual(Object.keys(packageJson.devDependencies).toSorted(), LINT_DEV_DEPENDENCIES);
+  assert.deepEqual(Object.keys(packageJson.devDependencies).toSorted(), CHECK_DEV_DEPENDENCIES);
   for (const [name, version] of Object.entries(packageJson.devDependencies)) {
     assert.match(version, /^\d+\.\d+\.\d+$/, `${name} must be pinned to an exact version`);
   }
   assert.equal(packageJson.scripts.lint, "eslint .");
+  assert.equal(packageJson.scripts.typecheck, "tsc --project tsconfig.json");
 
   assert.equal(lockfile.lockfileVersion, 3);
   assert.deepEqual(lockfile.packages[""].devDependencies, packageJson.devDependencies);
@@ -1489,7 +1490,7 @@ test("repository policy: licences, documentation and static-only styling are exp
     ]);
 
   assert.equal(Object.hasOwn(packageJson, "dependencies"), false);
-  assert.deepEqual(Object.keys(packageJson.devDependencies).toSorted(), LINT_DEV_DEPENDENCIES);
+  assert.deepEqual(Object.keys(packageJson.devDependencies).toSorted(), CHECK_DEV_DEPENDENCIES);
   assert.equal(rootEntries.includes("package-lock.json"), true);
   assert.equal(rootEntries.includes("npm-shrinkwrap.json"), false);
   // ESLint runs the recommended rule set only: no plugins, no extra rules.
@@ -1541,7 +1542,7 @@ test("repository policy: the README module line counts match the modules", async
   assert.equal(Number(claim[3]), applicationModules.length);
   // The claim carries the date it was measured, so a later count is visibly
   // a later measurement rather than a silent overstatement.
-  assert.match(readme, /measured on\s+13 September 2026/);
+  assert.match(readme, /measured on\s+14 September 2026/);
 });
 
 test("repository policy: generated pages contain no browser code or remote assets", async t => {
@@ -1615,11 +1616,13 @@ function assertWorkflowPolicy(workflow) {
   assert.equal((workflow.match(/\bnpm\s+ci\b/gi) ?? []).length, 1);
   const installIndex = validateJob.search(/^\s*run:\s*npm ci\s*$/m);
   const lintIndex = validateJob.search(/npm run lint/);
+  const typecheckIndex = validateJob.search(/npm run typecheck/);
   const buildTestIndex = validateJob.search(/npm run build && npm test/);
   assert.notEqual(installIndex, -1);
   assert.notEqual(lintIndex, -1);
+  assert.notEqual(typecheckIndex, -1);
   assert.notEqual(buildTestIndex, -1);
-  assert.ok(installIndex < lintIndex && lintIndex < buildTestIndex);
+  assert.ok(installIndex < lintIndex && lintIndex < typecheckIndex && typecheckIndex < buildTestIndex);
   assert.match(workflow, /SITE_URL: \$\{\{ steps\.pages\.outputs\.base_url \}\}/);
   assert.match(workflow, /pages: write/);
   assert.match(workflow, /id-token: write/);
@@ -1659,6 +1662,7 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     "package-manager-cache: false",
     "run: npm ci",
     "run: npm run lint",
+    "run: npm run typecheck",
     "run: npm run build && npm test",
     "test-windows:",
     "runs-on: windows-latest",
@@ -1719,8 +1723,9 @@ test("workflow policy rejects unsafe action, cache and installation mutations", 
     `${approvedWorkflow}\nrun: npm ci`,
     approvedWorkflow.replace("run: npm ci\n", ""),
     approvedWorkflow.replace("run: npm run lint\n", ""),
+    approvedWorkflow.replace("run: npm run typecheck\n", ""),
     approvedWorkflow.replace("run: npm ci\nrun: npm run lint\n", "run: npm run lint\nrun: npm ci\n"),
-    approvedWorkflow.replace("run: npm run lint\nrun: npm run build && npm test\n", "run: npm run build && npm test\nrun: npm run lint\n"),
+    approvedWorkflow.replace("run: npm run typecheck\nrun: npm run build && npm test\n", "run: npm run build && npm test\nrun: npm run typecheck\n"),
     approvedWorkflow.replace("run: npm run build && npm test\n", ""),
     `${approvedWorkflow}\ncontinue-on-error: true`,
   ]) {

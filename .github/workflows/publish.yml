@@ -28,11 +28,14 @@ jobs:
           node-version: 24.19.0
           package-manager-cache: false
 
-      - name: Install lint dependencies
+      - name: Install development dependencies
         run: npm ci
 
       - name: Lint
         run: npm run lint
+
+      - name: Check validation types
+        run: npm run typecheck
 
       - name: Build and test
         run: npm run build && npm test

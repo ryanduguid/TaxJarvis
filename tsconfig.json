@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2023",
+    "module": "NodeNext",
+    "types": []
+  },
+  "files": [
+    "validation-primitives.mjs",
+    "strict-json.mjs",
+    "evidence-bundle.mjs",
+    "typecheck/contracts.mts"
+  ]
+}

@@ -30,8 +30,8 @@ monitoring service or client use.
 
 Four modules carry that admission path: `live-evidence.mjs`,
 `live-import-internals.mjs`, `live-provenance.mjs` and `import-live.mjs` are
-2,103 of the 4,054 lines across the 9 application modules, measured on
-13 September 2026. That half is
+2,103 of the 4,265 lines across the 9 application modules, measured on
+14 September 2026. That half is
 deliberate, because almost all of it is verification and refusal rather than
 feature work: release, exact-byte digest and SLSA attestation checks, strict
 schema and cross-field validation, and a promotion that returns `unchanged`
@@ -46,7 +46,7 @@ is Windows-only and needs an authenticated GitHub CLI, so it never runs during
 
 - Node.js 24.19.0 or later
 - npm 11.17.0 or later
-- no package installation to build, test or publish; `npm ci` installs ESLint for `npm run lint` only
+- no package installation to build, test or publish; `npm ci` installs the development tools for linting and type checking
 
 Authenticated live evidence admission is supported only on Windows and additionally requires GitHub CLI 2.98.0 or later, authenticated for GitHub.
 
@@ -57,6 +57,7 @@ Authenticated live evidence admission is supported only on Windows and additiona
 - `npm run import-bundle -- --bundle <file>` authenticates and admits one live-v2 evidence bundle under the rules below.
 - `npm test` runs the complete Node test suite and prints a coverage summary.
 - `npm run lint` runs ESLint with the recommended rules (after `npm ci`).
+- `npm run typecheck` checks JSDoc types in the validation helpers, strict JSON parser and evidence-bundle validator, plus compile-only contract tests (after `npm ci`). It emits no files. Parsed JSON remains `unknown` until validated; object checks do not establish individual field types. Other modules are outside this initial scope.
 - `npm run smoke` exercises the exported routes over loopback HTTP.
 
 CI runs the full suite on Ubuntu and Windows. Manual deployment requires both
