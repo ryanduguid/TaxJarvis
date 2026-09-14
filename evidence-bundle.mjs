@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+
+/**
+ * @typedef {import("./validation-primitives.mjs").ValidationError} ValidationError
+ * @typedef {{ok: true, value: Record<string, unknown>} | {ok: false, errors: ValidationError[]}} ValidationResult
+ */
 import {
   exactKeys,
   httpsUrl,
@@ -115,16 +120,30 @@ const UPSTREAM_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export class EvidenceBundleError extends Error {
+  /**
+   * @param {string} message
+   */
   constructor(message) {
     super(message);
     this.name = "EvidenceBundleError";
   }
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {string} path
+ * @param {string} message
+ */
 function addError(errors, path, message) {
   errors.push({ path, message });
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ * @returns {boolean}
+ */
 function identifier(errors, value, path) {
   if (!isIdentifier(value)) {
     addError(errors, path, "must be a safe identifier");
@@ -133,6 +152,12 @@ function identifier(errors, value, path) {
   return true;
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ * @returns {boolean}
+ */
 function upstreamIdentifier(errors, value, path) {
   if (typeof value !== "string" || !UPSTREAM_ID.test(value)) {
     addError(errors, path, "must be a safe upstream identifier");
@@ -141,6 +166,11 @@ function upstreamIdentifier(errors, value, path) {
   return true;
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ */
 function sha256(errors, value, path) {
   if (typeof value !== "string" || !SHA256_ID.test(value)) {
     addError(errors, path, "must be a lowercase SHA-256 identifier");
@@ -149,6 +179,11 @@ function sha256(errors, value, path) {
   return true;
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ */
 function isoDate(errors, value, path) {
   if (typeof value !== "string") {
     addError(errors, path, "must be an ISO calendar date");
@@ -173,6 +208,10 @@ function isoDate(errors, value, path) {
   return value;
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} producer
+ */
 function validateProducer(errors, producer) {
   if (!exactKeys(errors, producer, "producer", PRODUCER_KEYS)) return;
   text(errors, producer.name, "producer.name", 100);
@@ -185,6 +224,10 @@ function validateProducer(errors, producer) {
   );
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} development
+ */
 function validateDevelopmentSection(errors, development) {
   if (!exactKeys(errors, development, "development", DEVELOPMENT_KEYS)) {
     return { publishedAt: null };
@@ -231,6 +274,13 @@ function validateDevelopmentSection(errors, development) {
   return { publishedAt };
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ * @param {ReadonlySet<string>} keys
+ * @param {{current?: boolean}} [options]
+ */
 function validateCompilation(errors, value, path, keys, { current = false } = {}) {
   if (!exactKeys(errors, value, path, keys)) {
     return { number: null, date: null, registerDocumentId: null };
@@ -252,6 +302,10 @@ function validateCompilation(errors, value, path, keys, { current = false } = {}
   };
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} sourceEvent
+ */
 function validateSourceEvent(errors, sourceEvent) {
   if (!exactKeys(errors, sourceEvent, "source_event", SOURCE_EVENT_KEYS)) {
     return {};
@@ -309,6 +363,12 @@ function validateSourceEvent(errors, sourceEvent) {
   };
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} rights
+ * @param {string} path
+ * @param {{allowInvalidHost: boolean}} options
+ */
 function validateRights(errors, rights, path, { allowInvalidHost }) {
   if (!exactKeys(errors, rights, path, RIGHTS_KEYS)) return;
   if (rights.mode !== "metadata-only") {
@@ -321,6 +381,11 @@ function validateRights(errors, rights, path, { allowInvalidHost }) {
   });
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} sources
+ * @param {{allowInvalidHost: boolean}} options
+ */
 function validateSources(errors, sources, { allowInvalidHost }) {
   if (!Array.isArray(sources) || sources.length < 1 || sources.length > 20) {
     addError(errors, "sources", "must contain 1 to 20 sources");
@@ -332,6 +397,7 @@ function validateSources(errors, sources, { allowInvalidHost }) {
   const sourceIds = new Set();
   const validated = [];
   for (let index = 0; index < sources.length; index += 1) {
+    /** @type {unknown} */
     const source = sources[index];
     const path = `sources[${index}]`;
     if (!exactKeys(errors, source, path, SOURCE_KEYS)) continue;
@@ -380,6 +446,11 @@ function validateSources(errors, sources, { allowInvalidHost }) {
   return validated;
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} revision
+ * @param {string | null} publishedAt
+ */
 function validateRevision(errors, revision, publishedAt) {
   if (!exactKeys(errors, revision, "revision", REVISION_KEYS)) {
     return { updatedAt: null };
@@ -406,6 +477,13 @@ function validateRevision(errors, revision, publishedAt) {
   return { updatedAt };
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {Record<string, unknown>} bundle
+ * @param {{generatedAt: string | null, publishedAt: string | null,
+ *   sourceEvent: ReturnType<typeof validateSourceEvent>,
+ *   sources: ReturnType<typeof validateSources>, updatedAt: string | null}} context
+ */
 function crossValidate(
   errors,
   bundle,
@@ -443,7 +521,8 @@ function crossValidate(
     if (publishedAt !== null && sourcePublished !== null && sourcePublished !== publishedAt) {
       addError(errors, `${path}.published_at`, "must equal development publication");
     }
-    if (bundle.development?.title !== source.title) {
+    const developmentTitle = isRecord(bundle.development) ? bundle.development.title : undefined;
+    if (developmentTitle !== source.title) {
       addError(errors, `${path}.title`, "must equal the development title");
     }
     if (source.publisher !== "Federal Register of Legislation") {
@@ -482,7 +561,7 @@ function crossValidate(
     }
     if (
       bundle.mode === "live" &&
-      source.rights?.attribution !== "Federal Register of Legislation"
+      (!isRecord(source.rights) || source.rights.attribution !== "Federal Register of Legislation")
     ) {
       addError(
         errors,
@@ -495,7 +574,8 @@ function crossValidate(
   const currentDate = sourceEvent.current?.date;
   if (typeof currentDate === "string" && publishedAt !== null) {
     const expectedPublishedAt = `${currentDate}T00:00:00Z`;
-    if (bundle.development?.published_at !== expectedPublishedAt) {
+    const publication = isRecord(bundle.development) ? bundle.development.published_at : undefined;
+    if (publication !== expectedPublishedAt) {
       addError(
         errors,
         "development.published_at",
@@ -505,7 +585,12 @@ function crossValidate(
   }
 }
 
+/**
+ * @param {unknown} input
+ * @returns {ValidationResult}
+ */
 export function validateEvidenceBundle(input) {
+  /** @type {ValidationError[]} */
   const errors = [];
   if (!exactKeys(errors, input, "$", BUNDLE_KEYS)) return { ok: false, errors };
   if (input.schema_version !== "evidence-bundle.v1") {
@@ -532,6 +617,9 @@ export function validateEvidenceBundle(input) {
   return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
 }
 
+/**
+ * @param {string} path
+ */
 function canonicalErrorPath(path) {
   if (path === "bundle_id" || path.startsWith("bundle_id.")) {
     return `upstream.${path}`;
@@ -547,6 +635,10 @@ function canonicalErrorPath(path) {
   return path;
 }
 
+/**
+ * @param {ValidationError[]} target
+ * @param {ValidationError[]} candidates
+ */
 function appendUniqueErrors(target, candidates) {
   const seen = new Set(target.map(error => `${error.path}\u0000${error.message}`));
   for (const error of candidates) {
@@ -558,7 +650,12 @@ function appendUniqueErrors(target, candidates) {
   }
 }
 
+/**
+ * @param {unknown} input
+ * @returns {ValidationResult}
+ */
 export function validateCanonicalDevelopmentV2(input) {
+  /** @type {ValidationError[]} */
   const errors = [];
   if (!exactKeys(errors, input, "$", CANONICAL_DEVELOPMENT_V2_KEYS)) {
     return { ok: false, errors };

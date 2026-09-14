@@ -1,21 +1,43 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+/** @typedef {{path: string, message: string}} ValidationError */
+
 const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{2,79}$/;
 const UTC_TIMESTAMP =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
 
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
 export function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+/**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
 export function isIdentifier(value) {
   return typeof value === "string" && IDENTIFIER.test(value);
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {string} path
+ * @param {string} message
+ */
 function addError(errors, path, message) {
   errors.push({ path, message });
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ * @param {ReadonlySet<string>} allowed
+ * @returns {value is Record<string, unknown>}
+ */
 export function exactKeys(errors, value, path, allowed) {
   if (!isRecord(value)) {
     addError(errors, path, "must be an object");
@@ -29,9 +51,13 @@ export function exactKeys(errors, value, path, allowed) {
   return true;
 }
 
+/**
+ * @param {string} value
+ */
 export function isXmlText(value) {
   for (const character of value) {
-    const codePoint = character.codePointAt(0);
+    // A for-of character always contains at least one code point.
+    const codePoint = /** @type {number} */ (character.codePointAt(0));
     if (
       codePoint !== 0x09 &&
       codePoint !== 0x0a &&
@@ -44,6 +70,13 @@ export function isXmlText(value) {
   return true;
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ * @param {number} maximum
+ * @returns {boolean}
+ */
 export function text(errors, value, path, maximum) {
   if (
     typeof value !== "string" ||
@@ -62,6 +95,12 @@ export function text(errors, value, path, maximum) {
   return true;
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ * @param {ReadonlySet<unknown>} allowed
+ */
 export function oneOf(errors, value, path, allowed) {
   if (!allowed.has(value)) {
     addError(errors, path, "has an unsupported value");
@@ -70,6 +109,9 @@ export function oneOf(errors, value, path, allowed) {
   return true;
 }
 
+/**
+ * @param {unknown} value
+ */
 export function timestampKey(value) {
   if (typeof value !== "string") return null;
   const match = UTC_TIMESTAMP.exec(value);
@@ -77,6 +119,12 @@ export function timestampKey(value) {
   return `${value.slice(0, 19)}.${(match[7] ?? "").padEnd(9, "0")}Z`;
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ * @param {{nullable?: boolean}} [options]
+ */
 export function utcTimestamp(errors, value, path, { nullable = false } = {}) {
   if (nullable && value === null) return null;
   if (typeof value !== "string") {
@@ -107,11 +155,20 @@ export function utcTimestamp(errors, value, path, { nullable = false } = {}) {
   return key;
 }
 
+/**
+ * @param {string} hostname
+ */
 export function isArtificialHostname(hostname) {
   const normalised = hostname.toLowerCase().replace(/\.+$/, "");
   return normalised === "invalid" || normalised.endsWith(".invalid");
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ * @param {{nullable?: boolean, allowInvalidHost?: boolean}} [options]
+ */
 export function httpsUrl(
   errors,
   value,
@@ -138,6 +195,11 @@ export function httpsUrl(
   }
 }
 
+/**
+ * @param {ValidationError[]} errors
+ * @param {unknown} value
+ * @param {string} path
+ */
 export function labelList(errors, value, path) {
   if (!Array.isArray(value) || value.length > 20) {
     addError(errors, path, "must be an array of at most 20 labels");

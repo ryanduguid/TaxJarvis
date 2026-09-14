@@ -98,6 +98,16 @@ for (const [name, mutator, path] of mutations) {
   test(`bundle validation rejects ${name}`, () => assertInvalid(mutator, path));
 }
 
+test("nested non-record values produce diagnostics instead of throwing", () => {
+  for (const invalid of [null, [], "invalid", 42, true]) {
+    assertInvalid(value => { value.development = invalid; }, "development");
+    assertInvalid(value => {
+      value.mode = "live";
+      value.sources[0].rights = invalid;
+    }, "sources[0].rights");
+  }
+});
+
 test("bundle validation rejects live mode with an artificial source host", () => {
   assertInvalid(value => { value.mode = "live"; }, "sources[0].canonical_url");
 });

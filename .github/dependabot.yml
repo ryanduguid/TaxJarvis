@@ -10,12 +10,9 @@ updates:
     schedule:
       interval: weekly
     groups:
-      # The only npm dependencies are the ESLint packages that `npm run lint`
-      # needs, and a repository test pins that exact dev-dependency set. A
-      # split bump would leave the set half-updated, so minor and patch
-      # updates arrive as one reviewable pull request. Major updates stay
-      # separate, because they can change the recommended rule set.
-      lint-dependencies:
+      # ESLint and TypeScript are development tools only. Review minor and
+      # patch updates together; keep major changes to their checks separate.
+      check-dependencies:
         patterns:
           - "*"
         update-types:
