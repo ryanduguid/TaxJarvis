@@ -220,7 +220,9 @@ export const DEFAULT_PORT = 4173;
 export function previewPort(value = String(DEFAULT_PORT)) {
   const port = /^\d+$/.test(value) ? Number(value) : Number.NaN;
   if (!(port >= 1 && port <= 65535)) {
-    throw new TypeError(`PORT must be an integer from 1 to 65535, not "${value}"`);
+    // The rejected value is not echoed: PORT comes from the environment, and a
+    // value set there by mistake would be copied into logs by the message.
+    throw new TypeError("PORT must be an integer from 1 to 65535");
   }
   return port;
 }
