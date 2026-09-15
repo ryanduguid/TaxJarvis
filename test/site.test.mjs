@@ -1036,7 +1036,7 @@ test("preview port parsing accepts one usable TCP port and nothing else", () => 
   for (const value of ["", "0", "abc", "65536", "-1", "8080.5", " 8080", "0x1f90"]) {
     assert.throws(() => previewPort(value), {
       name: "TypeError",
-      message: `PORT must be an integer from 1 to 65535, not "${value}"`,
+      message: "PORT must be an integer from 1 to 65535",
     });
   }
 });
@@ -1109,11 +1109,10 @@ test("smoke: an unusable PORT stops the build and the preview server alike", {
       child.stderr.on("data", chunk => { reported += chunk; });
 
       assert.deepEqual(await once(child, "close"), [1, null], label);
-      assert.equal(
-        reported,
-        `PORT must be an integer from 1 to 65535, not "${value}"\n`,
-        label,
-      );
+      // The rejected value is deliberately absent: PORT comes from the
+      // environment, and the README states that rejected values stay out of
+      // diagnostics.
+      assert.equal(reported, "PORT must be an integer from 1 to 65535\n", label);
     }
   }
 
@@ -1542,7 +1541,7 @@ test("repository policy: the README module line counts match the modules", async
   assert.equal(Number(claim[3]), applicationModules.length);
   // The claim carries the date it was measured, so a later count is visibly
   // a later measurement rather than a silent overstatement.
-  assert.match(readme, /measured on\s+14 September 2026/);
+  assert.match(readme, /measured on\s+16 September 2026/);
 });
 
 test("repository policy: generated pages contain no browser code or remote assets", async t => {
