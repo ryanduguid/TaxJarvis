@@ -1642,7 +1642,6 @@ function assertWorkflowPolicy(workflow) {
 test("workflow policy: the pinned workflow validates before main deployment", async () => {
   const workflowDirectory = new URL("../.github/workflows/", import.meta.url);
   assert.deepEqual(await readdir(workflowDirectory), [
-    "coderabbit-review-trigger.yml",
     "no-ai-attribution.yml",
     "publish.yml",
   ]);
