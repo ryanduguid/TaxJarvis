@@ -29,7 +29,7 @@ VENDOR='claude|anthropic|codex|openai|cursor|copilot|chatgpt|gemini|devin|codeiu
 DOMAIN='claude\.ai|claude\.com|anthropic\.com|openai\.com|chatgpt\.com|cursor\.(com|sh)|codeium\.com|windsurf\.com|cognition\.ai|devin\.ai|nousresearch\.com|qodo\.ai|openhands\.dev|all-hands\.dev'
 
 # Vendor words that are not plausible human names, so they can be matched alone.
-SOLE='claude|anthropic|openai|chatgpt|copilot|codex|cursor|codeium|windsurf|antigravity|qodo|openhands|nousresearch'
+SOLE='claude|anthropic|openai|chatgpt|copilot|codex|cursor|codeium|windsurf|antigravity|aider|qodo|openhands|nousresearch'
 
 status=0
 
@@ -38,7 +38,7 @@ status=0
 # set globally by an agent runtime.
 ai_name() {
 	printf '%s' "$1" | grep -Eqi \
-		"^($SOLE)\$|^claude (opus|sonnet|haiku|fable)( [0-9.]+)?|\
+		"^($SOLE)\$|^claude (opus|sonnet|haiku|fable)( [0-9.]+)?|^review bot$|\
 ^($VENDOR)[-_ ](code|agent|bot|assist|review)|\
 ^($VENDOR)([-_ ][a-z0-9]+)*\[bot\]|\
 ^(openai[-_ ]codex|github[-_ ]copilot|qodo[-_ ]code[-_ ]review|gemini[-_ ]code[-_ ]assist)"
@@ -82,13 +82,19 @@ awk -v vendor="$VENDOR" -v domain="$DOMAIN" -v hook="$hook" '
 		printf "%s: %s line %d: %s\n", hook, why, NR, $0 > "/dev/stderr"
 		bad = 1
 	}
-	/^#/ { next }
 	{
 		line = tolower($0)
-		if (line ~ /^[ \t]*(```|~~~)/) { fence = !fence; next }
+		# Match only the currently open fence type and length.
+		if (line ~ /^[ \t]*(```|~~~)/) {
+			pos = match(line, /(```|~~~)/)
+			ch = substr(line, pos, 1)
+			len = 0; while (substr(line, pos + len, 1) == ch) len++
+			if (!fence) { fence = ch; fence_len = len; next }
+			if (ch == fence && len >= fence_len) { fence = ""; next }
+		}
 		if (fence) next
 
-		if (line ~ ("^[ \t]*co-?authored-by:.*(" vendor ")"))
+		if (line ~ ("^[ \t]*co-?authored-by:.*(" vendor ")([^a-z0-9]|$)"))
 			flag("co-author trailer")
 		else if (line ~ ("^[ \t]*(generated|addressed|authored|written|created|produced|reviewed|fixed|resolved|implemented|assisted|handled)[-_ ]by:.*(" vendor ")"))
 			flag("agent by-line trailer")
