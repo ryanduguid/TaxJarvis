@@ -1546,7 +1546,7 @@ test("repository policy: the README module line counts match the modules", async
   assert.equal(Number(claim[3]), applicationModules.length);
   // The claim carries the date it was measured, so a later count is visibly
   // a later measurement rather than a silent overstatement.
-  assert.match(readme, /measured on\s+20 September 2026/);
+  assert.match(readme, /measured on\s+19 September 2026/);
 });
 
 test("repository policy: generated pages contain no browser code or remote assets", async t => {
