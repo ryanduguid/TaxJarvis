@@ -31,7 +31,7 @@ monitoring service or client use.
 Four modules carry that admission path: `live-evidence.mjs`,
 `live-import-internals.mjs`, `live-provenance.mjs` and `import-live.mjs` are
 2,103 of the 4,276 lines across the 9 application modules, measured on
-20 September 2026. That half is
+19 September 2026. That half is
 deliberate, because almost all of it is verification and refusal rather than
 feature work: release, exact-byte digest and SLSA attestation checks, strict
 schema and cross-field validation, and a promotion that returns `unchanged`
