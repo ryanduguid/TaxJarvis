@@ -1456,6 +1456,7 @@ test("build does not report failure after cleanup cannot remove the old artifact
   const replacement = changed(value => { value.title = "Replacement demonstration source"; });
   await writeFile(workspace.recordPath, JSON.stringify(replacement));
   const remove = filesystem.rm;
+  const report = t.mock.method(console, "error", () => {});
   const cleanup = t.mock.method(filesystem, "rm", async (path, options) => {
     if (path === backupDir) throw Object.assign(new Error("Cleanup denied"), { code: "EBUSY" });
     return remove(path, options);
@@ -1469,6 +1470,10 @@ test("build does not report failure after cleanup cannot remove the old artifact
     const after = await readArtifact(workspace.outputDir, paths);
     assert.match(after["index.html"], /Replacement demonstration source/);
     assert.deepEqual(await readArtifact(join(backupDir, "out"), paths), before);
+    assert.ok(
+      report.mock.calls.some(call => /could not remove .*\.out-previous.*removed by hand/.test(call.arguments[0])),
+      "a failed cleanup must warn that the next build will refuse to start",
+    );
   } finally {
     cleanup.mock.restore();
     syncBuiltinESMExports();
@@ -1541,7 +1546,7 @@ test("repository policy: the README module line counts match the modules", async
   assert.equal(Number(claim[3]), applicationModules.length);
   // The claim carries the date it was measured, so a later count is visibly
   // a later measurement rather than a silent overstatement.
-  assert.match(readme, /measured on\s+16 September 2026/);
+  assert.match(readme, /measured on\s+20 September 2026/);
 });
 
 test("repository policy: generated pages contain no browser code or remote assets", async t => {

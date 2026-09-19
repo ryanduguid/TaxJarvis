@@ -251,7 +251,16 @@ async function publishStagedOutput({ rootDir, outputDir, stagingDir }) {
       }
       throw new Error("Unable to publish staged output");
     }
-    await removePrivateDirectory(backupDir);
+    if (!await removePrivateDirectory(backupDir)) {
+      // A leftover backup makes createPrivateDirectory refuse every later
+      // build with "A private build directory is already present". Report the
+      // cleanup failure now, at the moment it happens, so the operator can
+      // remove the directory before the next build instead of discovering it
+      // there.
+      console.error(
+        `warning: could not remove ${backupDir}; the next build will refuse to start until it is removed by hand`,
+      );
+    }
   } catch (error) {
     if (!previousOutputMoved && !await removePrivateDirectory(backupDir)) {
       throw new Error("Unable to clean private build output", { cause: error });
