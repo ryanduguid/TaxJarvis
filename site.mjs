@@ -10,7 +10,6 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { validateCanonicalDevelopmentV2 } from "./evidence-bundle.mjs";
 import { validateLiveDevelopmentV2 } from "./live-evidence.mjs";
 import { parseStrictJsonBytes } from "./strict-json.mjs";
 import {
@@ -106,7 +105,6 @@ export function validateDevelopment(input) {
     return validateDevelopmentV1(input);
   }
   if (input.schema_version === "development.v2") {
-    if (input.mode === "synthetic") return validateCanonicalDevelopmentV2(input);
     if (input.mode === "live") return validateLiveDevelopmentV2(input);
     return {
       ok: false,
@@ -528,13 +526,12 @@ function renderDevelopment(record, siteUrl) {
       </article>`,
     });
   }
-  const syntheticWarning = record.mode === "synthetic"
-    ? `
+  // Only synthetic records reach this branch: live records rendered above.
+  const syntheticWarning = `
         <aside class="notice synthetic-warning" aria-labelledby="synthetic-status">
           <h2 id="synthetic-status">Synthetic development</h2>
           <p>This is demonstration data, not current professional coverage. Do not rely on it for client work.</p>
-        </aside>`
-    : "";
+        </aside>`;
   return layout({
     title: record.title,
     siteUrl,

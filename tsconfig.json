@@ -11,7 +11,6 @@
   "files": [
     "validation-primitives.mjs",
     "strict-json.mjs",
-    "evidence-bundle.mjs",
     "typecheck/contracts.mts"
   ]
 }

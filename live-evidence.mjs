@@ -188,10 +188,6 @@ function equals(errors, value, expected, path) {
   if (value !== expected) addError(errors, path, `must equal ${String(expected)}`);
 }
 
-function object(errors, value, path, keys) {
-  return exactKeys(errors, value, path, keys);
-}
-
 function boundedText(errors, value, path, maximum) {
   if (
     typeof value !== "string" ||
@@ -211,10 +207,8 @@ function boundedText(errors, value, path, maximum) {
 }
 
 function daysInMonth(year, month) {
-  if (month === 2) {
-    return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
-  }
-  return new Set([4, 6, 9, 11]).has(month) ? 30 : 31;
+  // Day 0 of the following month is the last day of this one.
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 function realDate(match) {
@@ -305,19 +299,11 @@ function integer(errors, value, path, minimum, maximum) {
   return value;
 }
 
-function isAscii(value) {
-  for (let index = 0; index < value.length; index += 1) {
-    if (value.charCodeAt(index) > 0x7f) return false;
-  }
-  return true;
-}
-
 function semver(errors, value, path) {
   if (
     typeof value !== "string" ||
     value.length < 1 ||
     value.length > 100 ||
-    !isAscii(value) ||
     matchEntire(SEMVER, value) === null
   ) {
     addError(errors, path, "must be strict Semantic Version 2.0.0 text");
@@ -349,7 +335,7 @@ function rightsFor(checkedAt) {
 }
 
 function validateRights(errors, value, path, checkedAt) {
-  if (!object(errors, value, path, RIGHTS_KEYS)) return null;
+  if (!exactKeys(errors, value, path, RIGHTS_KEYS)) return null;
   boundedText(errors, value.attribution, `${path}.attribution`, 500);
   const expected = checkedAt === null ? null : rightsFor(checkedAt);
   if (expected !== null) {
@@ -361,14 +347,14 @@ function validateRights(errors, value, path, checkedAt) {
 }
 
 function validateProducer(errors, value) {
-  if (!object(errors, value, "producer", BUNDLE_PRODUCER_KEYS)) return null;
+  if (!exactKeys(errors, value, "producer", BUNDLE_PRODUCER_KEYS)) return null;
   equals(errors, value.name, "tax-radar-au", "producer.name");
   const version = semver(errors, value.version, "producer.version");
   return version === null ? null : { name: "tax-radar-au", version };
 }
 
 function validateRun(errors, value) {
-  if (!object(errors, value, "run", RUN_KEYS)) return null;
+  if (!exactKeys(errors, value, "run", RUN_KEYS)) return null;
   const observedAt = utcTimestamp(errors, value.observed_at, "run.observed_at");
   equals(errors, value.scope_id, "au-primary-tax-legislation.v4", "run.scope_id");
   equals(errors, value.complete, true, "run.complete");
@@ -383,7 +369,7 @@ function validateRun(errors, value) {
 }
 
 function validateBaseline(errors, value) {
-  if (!object(errors, value, "baseline_title", BASELINE_KEYS)) return null;
+  if (!exactKeys(errors, value, "baseline_title", BASELINE_KEYS)) return null;
   const register = registerId(errors, value.register_id, "baseline_title.register_id");
   const title = boundedText(errors, value.name, "baseline_title.name", 500);
   const titleCollection = collection(
@@ -450,7 +436,7 @@ function validateBaseline(errors, value) {
 }
 
 function validateHeaders(errors, value, path) {
-  if (!object(errors, value, path, HEADER_KEYS)) return null;
+  if (!exactKeys(errors, value, path, HEADER_KEYS)) return null;
   for (const [name, headerValue] of Object.entries(value)) {
     boundedText(errors, headerValue, `${path}.${name}`, 2048);
   }
@@ -471,7 +457,7 @@ function validateHeaders(errors, value, path) {
 
 function validateRequest(errors, value, register, checkedAt) {
   const path = "capture_result.requests[0]";
-  if (!object(errors, value, path, REQUEST_KEYS)) return null;
+  if (!exactKeys(errors, value, path, REQUEST_KEYS)) return null;
   equals(errors, value.role, "current", `${path}.role`);
   if (register !== null) {
     equals(errors, value.url, currentRequestUrl(register), `${path}.url`);
@@ -513,7 +499,7 @@ function validateRequest(errors, value, register, checkedAt) {
 }
 
 function validateCapture(errors, value, baseline) {
-  if (!object(errors, value, "capture_result", CAPTURE_KEYS)) return null;
+  if (!exactKeys(errors, value, "capture_result", CAPTURE_KEYS)) return null;
   const register = registerId(errors, value.register_id, "capture_result.register_id");
   const resultCollection = collection(
     errors,
@@ -570,7 +556,7 @@ function canonicalCaptureResult(value) {
 }
 
 function validateObservation(errors, value, baseline, capture) {
-  if (!object(errors, value, "observation", OBSERVATION_KEYS)) return null;
+  if (!exactKeys(errors, value, "observation", OBSERVATION_KEYS)) return null;
   const register = registerId(errors, value.register_id, "observation.register_id");
   const observedCollection = collection(
     errors,
@@ -724,14 +710,14 @@ function parseRawResponse(errors, response, register) {
     addError(errors, "primary_response_base64", "must decode to strict OData JSON");
     return null;
   }
-  if (!object(errors, document, "primary_response", ODATA_KEYS)) return null;
+  if (!exactKeys(errors, document, "primary_response", ODATA_KEYS)) return null;
   equals(errors, document["@odata.context"], ODATA_CONTEXT, "primary_response.@odata.context");
   if (!Array.isArray(document.value) || document.value.length !== 1) {
     addError(errors, "primary_response.value", "must contain exactly one row");
     return null;
   }
   const row = document.value[0];
-  if (!object(errors, row, "primary_response.value[0]", ODATA_ROW_KEYS)) return null;
+  if (!exactKeys(errors, row, "primary_response.value[0]", ODATA_ROW_KEYS)) return null;
   if (register !== null) {
     equals(errors, row.titleId, register, "primary_response.value[0].titleId");
   } else {
@@ -766,7 +752,7 @@ function captureDigest(value) {
 
 function validateLiveBundle(input) {
   const errors = [];
-  if (!object(errors, input, "$", BUNDLE_KEYS)) return { errors, fact: null };
+  if (!exactKeys(errors, input, "$", BUNDLE_KEYS)) return { errors, fact: null };
   equals(errors, input.schema_version, "evidence-bundle.v2", "schema_version");
   const producer = validateProducer(errors, input.producer);
   const run = validateRun(errors, input.run);
@@ -1043,7 +1029,7 @@ export function transformLiveEvidenceBundle(parsed) {
 }
 
 function validateLiveSourceEvent(errors, value) {
-  if (!object(errors, value, "source_event", SOURCE_EVENT_KEYS)) return null;
+  if (!exactKeys(errors, value, "source_event", SOURCE_EVENT_KEYS)) return null;
   equals(errors, value.kind, "compilation-superseded", "source_event.kind");
   const register = registerId(errors, value.register_id, "source_event.register_id");
   const eventCollection = collection(errors, value.collection, "source_event.collection");
@@ -1051,7 +1037,7 @@ function validateLiveSourceEvent(errors, value) {
   const previous = value.previous_compilation;
   let previousNumber = null;
   let previousDate = null;
-  if (object(
+  if (exactKeys(
     errors,
     previous,
     "source_event.previous_compilation",
@@ -1076,7 +1062,7 @@ function validateLiveSourceEvent(errors, value) {
   let currentNumber = null;
   let currentDate = null;
   let documentId = null;
-  if (object(
+  if (exactKeys(
     errors,
     current,
     "source_event.current_compilation",
@@ -1132,7 +1118,7 @@ function validateLiveSourceEvent(errors, value) {
 }
 
 function validateCanonicalProducer(errors, value) {
-  if (!object(errors, value, "upstream.producer", CANONICAL_PRODUCER_KEYS)) {
+  if (!exactKeys(errors, value, "upstream.producer", CANONICAL_PRODUCER_KEYS)) {
     return null;
   }
   equals(errors, value.name, "tax-radar-au", "upstream.producer.name");
@@ -1152,7 +1138,7 @@ function validateCanonicalProducer(errors, value) {
 
 export function validateLiveDevelopmentV2(input) {
   const errors = [];
-  if (!object(errors, input, "$", DEVELOPMENT_KEYS)) return { ok: false, errors };
+  if (!exactKeys(errors, input, "$", DEVELOPMENT_KEYS)) return { ok: false, errors };
   equals(errors, input.schema_version, "development.v2", "schema_version");
   equals(errors, input.mode, "live", "mode");
   const title = boundedText(errors, input.title, "title", 500);
@@ -1182,7 +1168,7 @@ export function validateLiveDevelopmentV2(input) {
   let retrievedAt = null;
   if (!Array.isArray(input.sources) || input.sources.length !== 1) {
     addError(errors, "sources", "must contain exactly one source");
-  } else if (object(errors, input.sources[0], "sources[0]", SOURCE_KEYS)) {
+  } else if (exactKeys(errors, input.sources[0], "sources[0]", SOURCE_KEYS)) {
     source = input.sources[0];
     boundedText(errors, source.source_id, "sources[0].source_id", 80);
     equals(
@@ -1248,7 +1234,7 @@ export function validateLiveDevelopmentV2(input) {
   }
 
   let revisionUpdatedAt = null;
-  if (object(errors, input.revision, "revision", REVISION_KEYS)) {
+  if (exactKeys(errors, input.revision, "revision", REVISION_KEYS)) {
     equals(errors, input.revision.number, 1, "revision.number");
     revisionUpdatedAt = utcTimestamp(
       errors,
@@ -1260,7 +1246,7 @@ export function validateLiveDevelopmentV2(input) {
   }
 
   let generatedAt = null;
-  if (object(errors, input.upstream, "upstream", UPSTREAM_KEYS)) {
+  if (exactKeys(errors, input.upstream, "upstream", UPSTREAM_KEYS)) {
     sha256(errors, input.upstream.bundle_sha256, "upstream.bundle_sha256");
     generatedAt = utcTimestamp(
       errors,

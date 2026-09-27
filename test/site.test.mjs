@@ -37,11 +37,6 @@ const fixtureUrl = new URL(
   import.meta.url,
 );
 const fixture = JSON.parse(await readFile(fixtureUrl, "utf8"));
-const v2FixtureUrl = new URL(
-  "./fixtures/development.v2.json",
-  import.meta.url,
-);
-const v2Fixture = JSON.parse(await readFile(v2FixtureUrl, "utf8"));
 const liveBundleFixtureUrl = new URL(
   "./fixtures/evidence-bundle.v2.json",
   import.meta.url,
@@ -105,21 +100,14 @@ test("canonical fixture: validation accepts the source-only record", () => {
   });
 });
 
-test("development.v2 accepts the exact imported canonical record", () => {
-  assert.deepEqual(validateDevelopment(v2Fixture), {
-    ok: true,
-    value: v2Fixture,
-  });
-});
-
-test("development.v2 routes a live record and rejects every other mode at mode", () => {
+test("development.v2 accepts a live record and rejects every other mode at mode", () => {
   assert.deepEqual(validateDevelopment(liveFixture), {
     ok: true,
     value: liveFixture,
   });
 
-  for (const mode of [undefined, 7, "preview"]) {
-    const candidate = structuredClone(v2Fixture);
+  for (const mode of [undefined, 7, "preview", "synthetic"]) {
+    const candidate = structuredClone(liveFixture);
     if (mode === undefined) delete candidate.mode;
     else candidate.mode = mode;
     const result = validateDevelopment(candidate);
@@ -127,30 +115,6 @@ test("development.v2 routes a live record and rejects every other mode at mode",
     assert.equal(result.errors.some(error => error.path === "mode"), true);
   }
 });
-
-const v2Mutations = [
-  ["mode", value => { value.mode = "preview"; }, "mode"],
-  ["source event", value => { value.source_event.kind = "amended"; }, "source_event.kind"],
-  ["source evidence identity", value => { value.sources[0].evidence_id = "bad id"; }, "sources[0].evidence_id"],
-  ["source content digest", value => { value.sources[0].content_sha256 = "sha256:ABC"; }, "sources[0].content_sha256"],
-  ["source content kind", value => { value.sources[0].content_kind = "summary"; }, "sources[0].content_kind"],
-  ["source media type", value => { value.sources[0].content_media_type = "text/plain"; }, "sources[0].content_media_type"],
-  ["upstream bundle identifier", value => { value.upstream.bundle_id = "bad id"; }, "upstream.bundle_id"],
-  ["upstream bundle digest", value => { value.upstream.bundle_sha256 = "sha256:ABC"; }, "upstream.bundle_sha256"],
-  ["upstream producer baseline digest", value => { value.upstream.producer.baseline_sha256 = "sha256:ABC"; }, "upstream.producer.baseline_sha256"],
-  ["upstream observation digest", value => { value.upstream.producer.observation_facts_sha256 = "sha256:ABC"; }, "upstream.producer.observation_facts_sha256"],
-  ["revision replacement", value => { value.revision.replaces_bundle_id = "bundle-old"; }, "revision.replaces_bundle_id"],
-];
-
-for (const [name, mutator, path] of v2Mutations) {
-  test(`development.v2 rejects ${name}`, () => {
-    const candidate = structuredClone(v2Fixture);
-    mutator(candidate);
-    const result = validateDevelopment(candidate);
-    assert.equal(result.ok, false);
-    assert.equal(result.errors.some(error => error.path === path), true);
-  });
-}
 
 function changed(mutator) {
   const candidate = structuredClone(fixture);
@@ -475,13 +439,13 @@ test("rendering projects one identity, mode and three statuses to every format",
 });
 
 test("rendering preserves synthetic mode in HTML, RSS and JSON Feed", () => {
-  const files = renderSite([fixture, v2Fixture], {
+  const files = renderSite([fixture], {
     siteUrl: "https://publisher.example/",
     cssText: "",
   });
   const home = files.get("index.html");
   const development = files.get(
-    `developments/${v2Fixture.development_id}/index.html`,
+    `developments/${fixture.development_id}/index.html`,
   );
   const rss = files.get("feed.xml");
   const feed = JSON.parse(files.get("feed.json"));
@@ -492,10 +456,6 @@ test("rendering preserves synthetic mode in HTML, RSS and JSON Feed", () => {
   assert.doesNotMatch(development, /<a[^>]+example\.invalid/i);
   assert.match(rss, /Mode: synthetic/);
   assert.equal(feed.schema_version, "feed.v2");
-  assert.equal(
-    feed.items.find(item => item.development_id === v2Fixture.development_id).mode,
-    "synthetic",
-  );
   assert.equal(
     feed.items.find(item => item.development_id === fixture.development_id).mode,
     "synthetic",
@@ -1518,7 +1478,7 @@ test("repository policy: licences, documentation and static-only styling are exp
 test("repository policy: the README module line counts match the modules", async () => {
   const rootUrl = new URL("../", import.meta.url);
   const readme = await readFile(new URL("README.md", rootUrl), "utf8");
-  // The nine application modules, excluding eslint.config.mjs, which is
+  // The eight application modules, excluding eslint.config.mjs, which is
   // tooling configuration rather than part of the demonstration.
   const applicationModules = (await readdir(rootUrl))
     .filter(name => name.endsWith(".mjs") && name !== "eslint.config.mjs")
@@ -1546,7 +1506,7 @@ test("repository policy: the README module line counts match the modules", async
   assert.equal(Number(claim[3]), applicationModules.length);
   // The claim carries the date it was measured, so a later count is visibly
   // a later measurement rather than a silent overstatement.
-  assert.match(readme, /measured on\s+19 September 2026/);
+  assert.match(readme, /measured on\s+27 September 2026/);
 });
 
 test("repository policy: generated pages contain no browser code or remote assets", async t => {
