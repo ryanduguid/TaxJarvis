@@ -82,11 +82,8 @@ function supportedVersion(result) {
   const firstLine = stdout.split("\n", 1)[0].replace(/\r$/, "");
   const match = VERSION_LINE.exec(firstLine);
   if (match === null) return false;
-  const [major, minor, patch] = match.slice(1).map(Number);
-  return (
-    major > 2 ||
-    (major === 2 && (minor > 98 || (minor === 98 && patch >= 0)))
-  );
+  const [major, minor] = match.slice(1, 3).map(Number);
+  return major > 2 || (major === 2 && minor >= 98);
 }
 
 function hasOptions(result, required) {
